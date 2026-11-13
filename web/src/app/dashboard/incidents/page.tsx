@@ -1,7 +1,7 @@
-
+﻿
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   ArrowDownUp,
@@ -22,7 +22,7 @@ import {
 
 type IncidentType = "THEFT" | "HARASSMENT" | "ACCIDENT" | "OTHER";
 type Severity = "LOW" | "MEDIUM" | "HIGH";
-type Verification = "Verified" | "Pending review";
+type Verification = "Recorded";
 
 type Incident = {
   id: number;
@@ -164,7 +164,7 @@ function VerificationBadge({
 }: {
   verification: Verification;
 }) {
-  const verified = verification === "Verified";
+  const verified = verification === "Recorded";
 
   return (
     <span
@@ -181,7 +181,52 @@ function VerificationBadge({
 }
 
 export default function IncidentsPage() {
-  const [incidents, setIncidents] = useState<Incident[]>(initialIncidents);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [segments, setSegments] = useState<{ id: number; road: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [incidentResponse, segmentResponse] = await Promise.all([
+          fetch("/api/incidents"),
+          fetch("/api/segments"),
+        ]);
+
+        const incidentData = await incidentResponse.json();
+        const segmentData = await segmentResponse.json();
+
+        if (!incidentResponse.ok || !incidentData.success) {
+          throw new Error(incidentData.error || "Could not load incidents.");
+        }
+
+        if (!segmentResponse.ok || !segmentData.success) {
+          throw new Error(segmentData.error || "Could not load road segments.");
+        }
+
+        setSegments(segmentData.segments ?? []);
+
+        setIncidents((incidentData.incidents ?? []).map((item: any) => ({
+          id: Number(item.id),
+          type: item.type as IncidentType,
+          severity: item.severity as Severity,
+          road: item.road || `Segment ${item.segmentId}`,
+          location: `Road segment #${item.segmentId}`,
+          occurredAt: item.occurredAt,
+          reportedAt: item.reportedAt,
+          verification: "Recorded" as Verification,
+          description: "This incident record is stored in the Avenza database.",
+          actionTaken: `Recorded with user ID ${item.verifiedBy}.`,
+        })));
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Failed to load incidents.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
@@ -273,7 +318,7 @@ export default function IncidentsPage() {
     setStatusFilter("ALL");
   }
 
-  function submitReport(event: FormEvent<HTMLFormElement>) {
+  async function submitReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
 
@@ -299,18 +344,52 @@ export default function IncidentsPage() {
       return;
     }
 
+    const selectedSegment = segments.find((segment) => segment.road === form.road);
+
+    if (!selectedSegment) {
+      setFormError("Please select a road segment from the list.");
+      return;
+    }
+
+    let savedIncident: any;
+
+    try {
+      const response = await fetch("/api/incidents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segmentId: selectedSegment.id,
+          type: form.type,
+          severity: form.severity,
+          occurredAt: form.occurredAt,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Could not save the incident.");
+      }
+
+      savedIncident = result.incident;
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not save the incident.");
+      return;
+    }
+
     const newIncident: Incident = {
+      id: Number(savedIncident.id),
       id:
         Math.max(1000, ...incidents.map((incident) => incident.id)) + 1,
       type: form.type,
       severity: form.severity,
-      road: form.road.trim(),
-      location: form.location.trim(),
+      road: selectedSegment.road,
+      location: `Road segment #${selectedSegment.id}`,
       occurredAt: form.occurredAt,
-      reportedAt: new Date().toISOString(),
-      verification: "Pending review",
-      description: form.description.trim(),
-      actionTaken: "Awaiting administrator review.",
+      reportedAt: savedIncident.reportedAt,
+      verification: "Recorded",
+      description: "This incident record is stored in the Avenza database.",
+      actionTaken: `Recorded with user ID ${savedIncident.verifiedBy}.`,
     };
 
     setIncidents((previous) => [newIncident, ...previous]);
@@ -328,7 +407,7 @@ export default function IncidentsPage() {
       occurredAt: "",
       description: "",
     });
-    setNotice(`Incident #${newIncident.id} added for review.`);
+    setNotice(`Incident #${newIncident.id} saved to MySQL.`);
     setTimeout(() => setNotice(""), 4000);
   }
 
@@ -422,14 +501,14 @@ export default function IncidentsPage() {
         <StatCard
           label="Pending review"
           value={stats.pending}
-          description="Awaiting verification"
+          description="Not represented in database"
           icon={<Clock3 size={20} />}
           iconClass="bg-amber-50 text-amber-600"
         />
         <StatCard
-          label="Verified reports"
+          label="Recorded reports"
           value={stats.verified}
-          description="Reviewed in this demo"
+          description="Stored in MySQL"
           icon={<ShieldCheck size={20} />}
           iconClass="bg-emerald-50 text-emerald-600"
         />
@@ -449,7 +528,7 @@ export default function IncidentsPage() {
             </div>
 
             <span className="w-fit rounded-full bg-[#F1F5FA] px-3 py-1.5 text-xs font-semibold text-[#526178]">
-              {filteredIncidents.length} of {incidents.length} reports
+              {loading ? "Loading..." : `${filteredIncidents.length} of ${incidents.length} reports`}
             </span>
           </div>
 
@@ -683,7 +762,7 @@ export default function IncidentsPage() {
             Showing {filteredIncidents.length} incident
             {filteredIncidents.length === 1 ? "" : "s"}
           </span>
-          <span>Demo records · Not connected to a live database</span>
+          <span>Incident records loaded from MySQL</span>
         </div>
       </section>
 
@@ -733,17 +812,20 @@ export default function IncidentsPage() {
               </FormField>
             </div>
 
-            <FormField label="Road or street name">
-              <input
+                        <FormField label="Road segment">
+              <select
                 value={form.road}
-                onChange={(event) =>
-                  setForm({ ...form, road: event.target.value })
-                }
-                maxLength={150}
-                placeholder="e.g. MG Road"
+                onChange={(event) => setForm({ ...form, road: event.target.value })}
                 className={fieldClass}
                 required
-              />
+              >
+                <option value="">Select a road segment</option>
+                {segments.map((segment) => (
+                  <option key={segment.id} value={segment.road}>
+                    {segment.road} · Segment #{segment.id}
+                  </option>
+                ))}
+              </select>
             </FormField>
 
             <FormField label="Specific location">
@@ -1064,3 +1146,5 @@ function Modal({
     </div>
   );
 }
+
+

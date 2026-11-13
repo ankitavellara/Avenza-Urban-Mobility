@@ -1,5 +1,7 @@
+﻿import { Suspense } from "react";
 
 import Link from "next/link";
+
 import {
   ArrowDownRight,
   ArrowRight,
@@ -10,33 +12,8 @@ import {
   ShieldAlert,
   Signpost,
 } from "lucide-react";
+import pool from "@/lib/db";
 
-const metrics = [
-  {
-    label: "Registered routes",
-    value: "—",
-    note: "Predefined walking routes",
-    icon: Map,
-  },
-  {
-    label: "Road segments",
-    value: "—",
-    note: "Tracked road infrastructure",
-    icon: Signpost,
-  },
-  {
-    label: "Safety incidents",
-    value: "—",
-    note: "Reported incidents",
-    icon: ShieldAlert,
-  },
-  {
-    label: "Transport stops",
-    value: "—",
-    note: "Nearby mobility connections",
-    icon: BusFront,
-  },
-];
 
 const shortcuts = [
   {
@@ -65,7 +42,58 @@ const shortcuts = [
   },
 ];
 
-export default function DashboardPage() {
+async function getDashboardStats() {
+  try {
+    const [rows] = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM routes) AS routes,
+        (SELECT COUNT(*) FROM road_segments) AS roadSegments,
+        (SELECT COUNT(*) FROM incidents) AS incidents,
+        (SELECT COUNT(*) FROM transport_stops) AS transportStops
+    `);
+
+    return (rows as {
+      routes: number;
+      roadSegments: number;
+      incidents: number;
+      transportStops: number;
+    }[])[0];
+  } catch (error) {
+    console.error("Dashboard stats query failed:", error);
+    return null;
+  }
+}
+
+async function DashboardContent() {
+  const stats = await getDashboardStats();
+
+  const metrics = [
+    {
+      label: "Registered routes",
+      value: stats ? String(stats.routes) : "—",
+      note: "Predefined walking routes",
+      icon: Map,
+    },
+    {
+      label: "Road segments",
+      value: stats ? String(stats.roadSegments) : "—",
+      note: "Tracked road infrastructure",
+      icon: Signpost,
+    },
+    {
+      label: "Safety incidents",
+      value: stats ? String(stats.incidents) : "—",
+      note: "Reported incidents",
+      icon: ShieldAlert,
+    },
+    {
+      label: "Transport stops",
+      value: stats ? String(stats.transportStops) : "—",
+      note: "Nearby mobility connections",
+      icon: BusFront,
+    },
+  ];
+
   return (
     <div className="space-y-8">
       <section className="flex flex-col justify-between gap-5 rounded-3xl bg-[#172033] p-7 text-white sm:p-9 lg:flex-row lg:items-center">
@@ -103,7 +131,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <span className="rounded-lg border border-[#E1E7F0] bg-white px-3 py-2 text-xs font-semibold text-[#58677D]">
-            Awaiting database connection
+            {stats ? "Live database counts" : "Database unavailable"}
           </span>
         </div>
 
@@ -201,12 +229,10 @@ export default function DashboardPage() {
           </div>
 
           <div className="mt-6 rounded-xl bg-[#EDF3FB] p-4">
-            <p className="text-sm font-bold text-[#294C7C]">
-              Next step
-            </p>
+            <p className="text-sm font-bold text-[#294C7C]">Next step</p>
             <p className="mt-1 text-sm leading-6 text-[#42536D]">
-              Connect the MySQL database to replace placeholders with live
-              counts and verification results.
+              Review the database quality checks and verify the underlying
+              mobility data.
             </p>
           </div>
         </div>
@@ -217,7 +243,8 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-xl font-bold">Recent activity</h2>
             <p className="mt-1 text-sm text-[#58677D]">
-              Database activity will appear here once connected.
+              Database activity will appear here once activity tracking is
+              implemented.
             </p>
           </div>
           <span className="inline-flex items-center gap-2 self-start rounded-full bg-[#F1F4F8] px-3 py-1.5 text-xs font-semibold text-[#58677D]">
@@ -232,8 +259,9 @@ export default function DashboardPage() {
           </div>
           <h3 className="mt-4 font-bold">Activity feed not connected</h3>
           <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#58677D]">
-            Once the API is connected to MySQL, we can display real incident
-            reports, infrastructure changes, and other database activity.
+            Once activity tracking is implemented, this section can display
+            incident reports, infrastructure changes, and other database
+            activity.
           </p>
         </div>
       </section>
@@ -245,6 +273,24 @@ export default function DashboardPage() {
   );
 }
 
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-8">
+          <div className="h-40 animate-pulse rounded-3xl bg-[#E1E7F0]" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[1, 2, 3, 4].map((item) => (
+              <div key={item} className="h-36 animate-pulse rounded-2xl bg-[#E1E7F0]" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
+  );
+}
 function ChecklistItem({
   title,
   description,
@@ -266,3 +312,7 @@ function ChecklistItem({
     </div>
   );
 }
+
+
+
+
