@@ -13,12 +13,18 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { MapPinned } from "lucide-react";
 
 const navigation = [
   {
     label: "Overview",
     href: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    label: "Map",
+    href: "/dashboard/map",
+    icon: MapPinned,
   },
   {
     label: "Routes",

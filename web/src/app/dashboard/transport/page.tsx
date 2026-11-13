@@ -1,4 +1,5 @@
-﻿"use client";
+
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -36,7 +37,9 @@ export default function TransportPage() {
 
         setStops(data.stops ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong.");
+        setError(
+          err instanceof Error ? err.message : "Something went wrong."
+        );
       } finally {
         setLoading(false);
       }
@@ -54,7 +57,9 @@ export default function TransportPage() {
     const term = search.toLowerCase().trim();
 
     return stops.filter((stop) => {
-      const matchesType = type === "ALL" || stop.transportType === type;
+      const matchesType =
+        type === "ALL" || stop.transportType === type;
+
       const matchesSearch =
         !term ||
         stop.stopName.toLowerCase().includes(term) ||
@@ -67,6 +72,12 @@ export default function TransportPage() {
     });
   }, [stops, search, type]);
 
+  const connectedSegmentCount = new Set(
+    stops.flatMap((stop) =>
+      stop.linkedSegments.map((segment) => segment.segmentId)
+    )
+  ).size;
+
   return (
     <main className="min-h-screen bg-[#f7f8fa] px-6 py-8 text-slate-900 md:px-10">
       <div className="mx-auto max-w-7xl">
@@ -74,9 +85,11 @@ export default function TransportPage() {
           <p className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
             Avenza · Urban Mobility
           </p>
+
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
             Public Transport
           </h1>
+
           <p className="mt-2 max-w-2xl text-slate-500">
             Explore transit stops and the road segments connected to them.
           </p>
@@ -87,14 +100,16 @@ export default function TransportPage() {
             <p className="text-sm text-slate-500">Total stops</p>
             <p className="mt-2 text-3xl font-bold">{stops.length}</p>
           </div>
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
             <p className="text-sm text-slate-500">Transport types</p>
             <p className="mt-2 text-3xl font-bold">{types.length}</p>
           </div>
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5">
             <p className="text-sm text-slate-500">Connected segments</p>
             <p className="mt-2 text-3xl font-bold">
-              {new Set(stops.flatMap((stop) => stop.linkedSegments.map((s) => s.segmentId))).size}
+              {connectedSegmentCount}
             </p>
           </div>
         </div>
@@ -113,6 +128,7 @@ export default function TransportPage() {
             className="rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-teal-600"
           >
             <option value="ALL">All transport types</option>
+
             {types.map((transportType) => (
               <option key={transportType} value={transportType}>
                 {transportType}
@@ -145,11 +161,16 @@ export default function TransportPage() {
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-teal-700">
                       {stop.transportType}
                     </p>
-                    <h2 className="text-lg font-semibold">{stop.stopName}</h2>
+
+                    <h2 className="text-lg font-semibold">
+                      {stop.stopName}
+                    </h2>
+
                     <p className="mt-1 text-xs text-slate-400">
                       Stop ID · {stop.stopId}
                     </p>
                   </div>
+
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-xl">
                     {stop.transportType.toLowerCase().includes("rail")
                       ? "🚆"
@@ -169,7 +190,10 @@ export default function TransportPage() {
 
                 <div className="border-t border-slate-100 pt-4">
                   <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Connected roads</h3>
+                    <h3 className="text-sm font-semibold">
+                      Connected roads
+                    </h3>
+
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
                       {stop.linkedSegments.length}
                     </span>
@@ -187,11 +211,15 @@ export default function TransportPage() {
                           className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
                         >
                           <div>
-                            <p className="text-sm font-medium">{segment.road}</p>
+                            <p className="text-sm font-medium">
+                              {segment.road}
+                            </p>
+
                             <p className="text-xs text-slate-400">
                               Segment #{segment.segmentId}
                             </p>
                           </div>
+
                           <span className="whitespace-nowrap text-xs font-medium text-slate-600">
                             {segment.distanceM} m
                           </span>
