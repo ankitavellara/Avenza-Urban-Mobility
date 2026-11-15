@@ -203,8 +203,8 @@ export default function HomePage() {
             </div>
 
             <p className="mt-4 text-xs leading-5 text-[#58677D]">
-              Illustrative preview. Route data and map functionality will be
-              connected to the Avenza database as we build the application.
+              Open the dashboard map to inspect road, incident, and transport
+              records loaded from the Avenza database.
             </p>
           </div>
         </div>

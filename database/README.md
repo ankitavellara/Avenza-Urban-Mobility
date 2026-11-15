@@ -10,7 +10,7 @@ Avenza is a database-driven pedestrian route assessment platform designed to eva
 
 
 
-The project uses MySQL for structured relational data. MongoDB is planned for community-reported incident observations.
+The project uses MySQL for structured relational records and Neo4j for graph queries across saved route sequences, road segments, transit stops, and incident reports. MySQL is the source of truth; Neo4j is synchronized when the graph page loads and handles start-to-end route searches without re-syncing for each search. See [the Neo4j setup and data model](neo4j/README.md).
 
 
 
@@ -142,7 +142,7 @@ The associative tables `route\_segments` and `segment\_transport` implement many
 
 
 
-The `source\_observation\_id` field in `incidents` is intended to identify a corresponding MongoDB observation. It is not a cross-database foreign key.
+The `source\_observation\_id` field in `incidents` is retained from an earlier design and is not currently connected to Neo4j or another data store.
 
 
 
@@ -394,7 +394,7 @@ Save actual terminal output to the corresponding evidence directory. Do not labe
 
 \- Geographic continuity of route-segment sequences has not been verified.
 
-\- MongoDB integration remains separate from the current MySQL implementation.
+\- Neo4j is a graph projection of MySQL routes, segments, and transport connections; MySQL remains the source of truth.
 
 \- The application layer, API integration, and authentication/authorization must be verified independently.
 

@@ -1,7 +1,10 @@
 ﻿import { NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 
 export async function GET() {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
   try {
     const [rows] = await pool.query(`
       SELECT

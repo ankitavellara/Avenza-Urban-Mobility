@@ -1,10 +1,13 @@
 ﻿import { NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 
 const allowedTypes = ["THEFT", "HARASSMENT", "ACCIDENT", "OTHER"];
 const allowedSeverities = ["LOW", "MEDIUM", "HIGH"];
 
 export async function GET() {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
   try {
     const [rows] = await pool.query(`
       SELECT
@@ -32,6 +35,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
   try {
     const body = await request.json();
     const segmentId = Number(body.segmentId);
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
     }
 
     const [users] = await pool.query(
-      "SELECT user_id FROM users ORDER BY user_id LIMIT 1"
+      "SELECT user_id FROM users WHERE is_active = 1 ORDER BY (role = 'ADMIN') DESC, user_id LIMIT 1"
     );
     const reviewer = (users as Array<{ user_id: number }>)[0];
 

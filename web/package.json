@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "auth:promote-admin": "node scripts/promote-admin.mjs"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -14,6 +15,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.61.0",
     "mysql2": "^3.24.6",
+    "neo4j-driver": "^6.3.2",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",

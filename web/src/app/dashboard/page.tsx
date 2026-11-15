@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   BusFront,
+  GitBranch,
   Map,
   MapPin,
   ShieldAlert,
@@ -43,6 +44,13 @@ const sections = [
       "Explore public transport stops and their connections to road segments.",
     href: "/dashboard/transport",
     icon: BusFront,
+  },
+  {
+    title: "Route graph",
+    description:
+      "Explore Neo4j relationships between routes, roads, and transit stops.",
+    href: "/dashboard/graph",
+    icon: GitBranch,
   },
 ];
 
@@ -137,7 +145,7 @@ async function DashboardContent() {
             </h2>
 
             <p className="mt-1 text-sm text-[#64748B]">
-              Explore the map and inspect the locations shown.
+              Inspect road segments, reported incidents, and transport stops from MySQL.
             </p>
           </div>
 
@@ -152,9 +160,6 @@ async function DashboardContent() {
 
         <MapClient compact showFilters={false} />
 
-        <p className="mt-3 text-xs leading-5 text-[#8794A7]">
-          Map locations are illustrative examples.
-        </p>
       </section>
 
       <section>

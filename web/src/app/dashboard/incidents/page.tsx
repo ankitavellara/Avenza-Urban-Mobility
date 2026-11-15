@@ -5,118 +5,32 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   ArrowDownUp,
-  ArrowLeft,
   ArrowRight,
-  Check,
   CheckCircle2,
-  Clock3,
   Eye,
   FileWarning,
   Filter,
   MapPin,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 
 type IncidentType = "THEFT" | "HARASSMENT" | "ACCIDENT" | "OTHER";
 type Severity = "LOW" | "MEDIUM" | "HIGH";
-type Verification = "Recorded";
-
 type Incident = {
   id: number;
+  segmentId: number;
   type: IncidentType;
   severity: Severity;
   road: string;
-  location: string;
   occurredAt: string;
   reportedAt: string;
-  verification: Verification;
-  description: string;
-  actionTaken: string;
+  verifiedBy: number;
 };
-
-const initialIncidents: Incident[] = [
-  {
-    id: 1001,
-    type: "HARASSMENT",
-    severity: "HIGH",
-    road: "MG Road",
-    location: "Near Trinity Metro Station",
-    occurredAt: "2026-10-24T20:15",
-    reportedAt: "2026-10-24T20:42",
-    verification: "Verified",
-    description:
-      "A harassment incident was reported near the metro entrance. The report was reviewed and verified by an administrator.",
-    actionTaken: "Report verified for safety assessment.",
-  },
-  {
-    id: 1002,
-    type: "ACCIDENT",
-    severity: "HIGH",
-    road: "Outer Ring Road",
-    location: "Near Marathahalli Junction",
-    occurredAt: "2026-10-24T17:30",
-    reportedAt: "2026-10-24T17:55",
-    verification: "Pending review",
-    description:
-      "A pedestrian reported a road accident near a busy junction with heavy evening traffic.",
-    actionTaken: "Awaiting administrator review.",
-  },
-  {
-    id: 1003,
-    type: "THEFT",
-    severity: "MEDIUM",
-    road: "Brigade Road",
-    location: "Commercial Street junction",
-    occurredAt: "2026-10-23T19:10",
-    reportedAt: "2026-10-23T19:35",
-    verification: "Verified",
-    description:
-      "A theft was reported in a crowded pedestrian area during evening shopping hours.",
-    actionTaken: "Report verified for safety assessment.",
-  },
-  {
-    id: 1004,
-    type: "OTHER",
-    severity: "LOW",
-    road: "Church Street",
-    location: "Near the pedestrian walkway",
-    occurredAt: "2026-10-23T11:20",
-    reportedAt: "2026-10-23T12:05",
-    verification: "Pending review",
-    description:
-      "A pedestrian reported an unsafe obstruction affecting movement along the walkway.",
-    actionTaken: "Awaiting administrator review.",
-  },
-  {
-    id: 1005,
-    type: "HARASSMENT",
-    severity: "MEDIUM",
-    road: "Residency Road",
-    location: "Near a public bus stop",
-    occurredAt: "2026-10-22T18:45",
-    reportedAt: "2026-10-22T19:10",
-    verification: "Pending review",
-    description:
-      "A community member submitted a report concerning an uncomfortable encounter near a bus stop.",
-    actionTaken: "Awaiting administrator review.",
-  },
-  {
-    id: 1006,
-    type: "ACCIDENT",
-    severity: "LOW",
-    road: "Indiranagar 100 Feet Road",
-    location: "Near the main crossing",
-    occurredAt: "2026-10-21T09:15",
-    reportedAt: "2026-10-21T09:40",
-    verification: "Verified",
-    description:
-      "A minor pedestrian accident was reported at a road crossing.",
-    actionTaken: "Report verified for safety assessment.",
-  },
-];
 
 const typeLabels: Record<IncidentType, string> = {
   THEFT: "Theft",
@@ -149,6 +63,12 @@ function formatShortDate(value: string) {
   });
 }
 
+function toDateTimeLocal(value: string) {
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function SeverityBadge({ severity }: { severity: Severity }) {
   return (
     <span
@@ -159,23 +79,13 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
-function VerificationBadge({
-  verification,
-}: {
-  verification: Verification;
-}) {
-  const verified = verification === "Recorded";
-
+function RecordedBadge() {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-        verified
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-amber-50 text-amber-700"
-      }`}
+      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700"
     >
-      {verified ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
-      {verification}
+      <CheckCircle2 size={13} />
+      Recorded
     </span>
   );
 }
@@ -184,13 +94,36 @@ export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [segments, setSegments] = useState<{ id: number; road: string }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [search, setSearch] = useState("");
+  const [severityFilter, setSeverityFilter] = useState("ALL");
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [sortNewest, setSortNewest] = useState(true);
+  const [selectedIncident, setSelectedIncident] =
+    useState<Incident | null>(null);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
+  const [incidentToDelete, setIncidentToDelete] = useState<Incident | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [formError, setFormError] = useState("");
+  const [form, setForm] = useState({
+    type: "OTHER" as IncidentType,
+    severity: "MEDIUM" as Severity,
+    segmentId: "",
+    occurredAt: "",
+  });
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [incidentResponse, segmentResponse] = await Promise.all([
+        const [incidentResponse, segmentResponse, sessionResponse] = await Promise.all([
           fetch("/api/incidents"),
           fetch("/api/segments"),
+          fetch("/api/auth/session"),
         ]);
 
         const incidentData = await incidentResponse.json();
@@ -205,21 +138,23 @@ export default function IncidentsPage() {
         }
 
         setSegments(segmentData.segments ?? []);
+        if (sessionResponse.ok) {
+          const sessionData = await sessionResponse.json();
+          setIsAdmin(sessionData.user?.role === "ADMIN");
+        }
 
         setIncidents((incidentData.incidents ?? []).map((item: any) => ({
           id: Number(item.id),
           type: item.type as IncidentType,
           severity: item.severity as Severity,
           road: item.road || `Segment ${item.segmentId}`,
-          location: `Road segment #${item.segmentId}`,
           occurredAt: item.occurredAt,
           reportedAt: item.reportedAt,
-          verification: "Recorded" as Verification,
-          description: "This incident record is stored in the Avenza database.",
-          actionTaken: `Recorded with user ID ${item.verifiedBy}.`,
+          segmentId: Number(item.segmentId),
+          verifiedBy: Number(item.verifiedBy),
         })));
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Failed to load incidents.");
+        setLoadError(error instanceof Error ? error.message : "Failed to load incidents.");
       } finally {
         setLoading(false);
       }
@@ -227,37 +162,12 @@ export default function IncidentsPage() {
 
     loadData();
   }, []);
-  const [search, setSearch] = useState("");
-  const [severityFilter, setSeverityFilter] = useState("ALL");
-  const [typeFilter, setTypeFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [sortNewest, setSortNewest] = useState(true);
-  const [selectedIncident, setSelectedIncident] =
-    useState<Incident | null>(null);
-  const [showReportForm, setShowReportForm] = useState(false);
-  const [notice, setNotice] = useState("");
-
-  const [form, setForm] = useState({
-    type: "OTHER" as IncidentType,
-    severity: "MEDIUM" as Severity,
-    road: "",
-    location: "",
-    occurredAt: "",
-    description: "",
-  });
-
-  const [formError, setFormError] = useState("");
-
   const stats = useMemo(
     () => ({
       total: incidents.length,
       high: incidents.filter((item) => item.severity === "HIGH").length,
-      pending: incidents.filter(
-        (item) => item.verification === "Pending review",
-      ).length,
-      verified: incidents.filter(
-        (item) => item.verification === "Verified",
-      ).length,
+      medium: incidents.filter((item) => item.severity === "MEDIUM").length,
+      low: incidents.filter((item) => item.severity === "LOW").length,
     }),
     [incidents],
   );
@@ -271,9 +181,8 @@ export default function IncidentsPage() {
           !query ||
           [
             incident.road,
-            incident.location,
-            incident.description,
             incident.id.toString(),
+            incident.segmentId.toString(),
             typeLabels[incident.type],
           ].some((value) => value.toLowerCase().includes(query));
 
@@ -284,16 +193,7 @@ export default function IncidentsPage() {
         const matchesType =
           typeFilter === "ALL" || incident.type === typeFilter;
 
-        const matchesStatus =
-          statusFilter === "ALL" ||
-          incident.verification === statusFilter;
-
-        return (
-          matchesSearch &&
-          matchesSeverity &&
-          matchesType &&
-          matchesStatus
-        );
+        return matchesSearch && matchesSeverity && matchesType;
       })
       .sort((a, b) => {
         const difference =
@@ -307,7 +207,6 @@ export default function IncidentsPage() {
     search,
     severityFilter,
     typeFilter,
-    statusFilter,
     sortNewest,
   ]);
 
@@ -315,19 +214,13 @@ export default function IncidentsPage() {
     setSearch("");
     setSeverityFilter("ALL");
     setTypeFilter("ALL");
-    setStatusFilter("ALL");
   }
 
   async function submitReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
 
-    if (
-      !form.road.trim() ||
-      !form.location.trim() ||
-      !form.occurredAt ||
-      !form.description.trim()
-    ) {
+    if (!form.segmentId || !form.occurredAt) {
       setFormError("Please complete all required fields.");
       return;
     }
@@ -344,18 +237,23 @@ export default function IncidentsPage() {
       return;
     }
 
-    const selectedSegment = segments.find((segment) => segment.road === form.road);
+    const selectedSegment = segments.find(
+      (segment) => segment.id === Number(form.segmentId),
+    );
 
     if (!selectedSegment) {
       setFormError("Please select a road segment from the list.");
       return;
     }
 
+    setIsSaving(true);
     let savedIncident: any;
 
     try {
-      const response = await fetch("/api/incidents", {
-        method: "POST",
+      const response = await fetch(
+        editingIncident ? `/api/incidents/${editingIncident.id}` : "/api/incidents",
+        {
+        method: editingIncident ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           segmentId: selectedSegment.id,
@@ -374,66 +272,81 @@ export default function IncidentsPage() {
       savedIncident = result.incident;
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not save the incident.");
+      setIsSaving(false);
       return;
     }
 
-    const newIncident: Incident = {
+    const saved: Incident = {
       id: Number(savedIncident.id),
-      id:
-        Math.max(1000, ...incidents.map((incident) => incident.id)) + 1,
-      type: form.type,
-      severity: form.severity,
-      road: selectedSegment.road,
-      location: `Road segment #${selectedSegment.id}`,
-      occurredAt: form.occurredAt,
+      segmentId: Number(savedIncident.segmentId),
+      type: savedIncident.type as IncidentType,
+      severity: savedIncident.severity as Severity,
+      road: savedIncident.road || selectedSegment.road,
+      occurredAt: savedIncident.occurredAt,
       reportedAt: savedIncident.reportedAt,
-      verification: "Recorded",
-      description: "This incident record is stored in the Avenza database.",
-      actionTaken: `Recorded with user ID ${savedIncident.verifiedBy}.`,
+      verifiedBy: Number(savedIncident.verifiedBy),
     };
 
-    setIncidents((previous) => [newIncident, ...previous]);
-    setSearch("");
-    setSeverityFilter("ALL");
-    setTypeFilter("ALL");
-    setStatusFilter("ALL");
-    setSortNewest(true);
+    if (editingIncident) {
+      setIncidents((previous) => previous.map((item) => item.id === saved.id ? saved : item));
+      setNotice(`Incident #${saved.id} updated in MySQL.`);
+    } else {
+      setIncidents((previous) => [saved, ...previous]);
+      setSearch("");
+      setSeverityFilter("ALL");
+      setTypeFilter("ALL");
+      setSortNewest(true);
+      setNotice(`Incident #${saved.id} saved to MySQL.`);
+    }
+    setIsSaving(false);
     setShowReportForm(false);
+    setEditingIncident(null);
     setForm({
       type: "OTHER",
       severity: "MEDIUM",
-      road: "",
-      location: "",
+      segmentId: "",
       occurredAt: "",
-      description: "",
     });
-    setNotice(`Incident #${newIncident.id} saved to MySQL.`);
     setTimeout(() => setNotice(""), 4000);
   }
 
   function closeReportForm() {
     setShowReportForm(false);
+    setEditingIncident(null);
     setFormError("");
   }
 
-  function markVerified(incident: Incident) {
-    setIncidents((previous) =>
-      previous.map((item) =>
-        item.id === incident.id
-          ? {
-              ...item,
-              verification: "Verified",
-              actionTaken: "Marked as verified in this demo.",
-            }
-          : item,
-      ),
-    );
-
-    setSelectedIncident({
-      ...incident,
-      verification: "Verified",
-      actionTaken: "Marked as verified in this demo.",
+  function startEditing(incident: Incident) {
+    setForm({
+      type: incident.type,
+      severity: incident.severity,
+      segmentId: String(incident.segmentId),
+      occurredAt: toDateTimeLocal(incident.occurredAt),
     });
+    setEditingIncident(incident);
+    setFormError("");
+    setSelectedIncident(null);
+    setShowReportForm(true);
+  }
+
+  async function deleteIncident() {
+    if (!incidentToDelete) return;
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/incidents/${incidentToDelete.id}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || "Could not delete incident.");
+      setIncidents((previous) => previous.filter((item) => item.id !== incidentToDelete.id));
+      setIncidentToDelete(null);
+      setSelectedIncident(null);
+      setNotice(`Incident #${incidentToDelete.id} deleted from MySQL.`);
+      setTimeout(() => setNotice(""), 4000);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not delete incident.");
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   return (
@@ -457,7 +370,12 @@ export default function IncidentsPage() {
         </div>
 
         <button
-          onClick={() => setShowReportForm(true)}
+          onClick={() => {
+            setEditingIncident(null);
+            setForm({ type: "OTHER", severity: "MEDIUM", segmentId: "", occurredAt: "" });
+            setFormError("");
+            setShowReportForm(true);
+          }}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#172033] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#293750]"
         >
           <Plus size={18} />
@@ -465,7 +383,7 @@ export default function IncidentsPage() {
         </button>
       </section>
 
-      {/* Demo notice */}
+      {/* Data source notice */}
       <div className="flex items-start gap-3 rounded-xl border border-[#D9E6F7] bg-[#EDF4FD] px-4 py-3">
         <AlertTriangle
           size={19}
@@ -473,11 +391,11 @@ export default function IncidentsPage() {
         />
         <div>
           <p className="text-sm font-semibold text-[#294B78]">
-            Demonstration data
+            MySQL incident records
           </p>
           <p className="mt-0.5 text-sm leading-5 text-[#526A89]">
-            These are illustrative records, not live community reports.
-            Changes made here are temporary and are not sent to an authority.
+            Incidents are loaded from MySQL. The current schema stores the road
+            segment, type, severity, occurrence time, report time, and verifier.
           </p>
         </div>
       </div>
@@ -487,7 +405,7 @@ export default function IncidentsPage() {
         <StatCard
           label="Total incidents"
           value={stats.total}
-          description="Reports in this demo"
+          description="Loaded from MySQL"
           icon={<FileWarning size={20} />}
           iconClass="bg-[#EAF2FD] text-[#4B76B7]"
         />
@@ -499,20 +417,26 @@ export default function IncidentsPage() {
           iconClass="bg-rose-50 text-rose-600"
         />
         <StatCard
-          label="Pending review"
-          value={stats.pending}
-          description="Not represented in database"
-          icon={<Clock3 size={20} />}
+          label="Medium severity"
+          value={stats.medium}
+          description="Stored medium-severity reports"
+          icon={<AlertTriangle size={20} />}
           iconClass="bg-amber-50 text-amber-600"
         />
         <StatCard
-          label="Recorded reports"
-          value={stats.verified}
-          description="Stored in MySQL"
+          label="Low severity"
+          value={stats.low}
+          description="Stored low-severity reports"
           icon={<ShieldCheck size={20} />}
           iconClass="bg-emerald-50 text-emerald-600"
         />
       </section>
+
+      {loadError && (
+        <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {loadError}
+        </p>
+      )}
 
       {/* Incidents table */}
       <section className="overflow-hidden rounded-2xl border border-[#E1E7F0] bg-white shadow-sm">
@@ -542,7 +466,7 @@ export default function IncidentsPage() {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search road, location, type, or report ID..."
+                placeholder="Search road, segment ID, type, or report ID..."
                 className="h-11 w-full rounded-xl border border-[#DCE3ED] bg-white pl-10 pr-4 text-sm text-[#172033] outline-none transition placeholder:text-[#98A2B3] focus:border-[#83ACE5] focus:ring-2 focus:ring-[#A5C5F0]/40"
               />
             </div>
@@ -557,7 +481,7 @@ export default function IncidentsPage() {
           </div>
 
           {/* Filters */}
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FilterSelect
               label="Severity"
               value={severityFilter}
@@ -583,22 +507,9 @@ export default function IncidentsPage() {
               ]}
             />
 
-            <FilterSelect
-              label="Verification"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                ["ALL", "All statuses"],
-                ["Verified", "Verified"],
-                ["Pending review", "Pending review"],
-              ]}
-            />
           </div>
 
-          {(search ||
-            severityFilter !== "ALL" ||
-            typeFilter !== "ALL" ||
-            statusFilter !== "ALL") && (
+          {(search || severityFilter !== "ALL" || typeFilter !== "ALL") && (
             <button
               onClick={resetFilters}
               className="mt-3 text-sm font-semibold text-[#5079B4] hover:text-[#294B78]"
@@ -616,8 +527,8 @@ export default function IncidentsPage() {
                 <th className="px-6 py-4">Incident</th>
                 <th className="px-4 py-4">Severity</th>
                 <th className="px-4 py-4">Reported</th>
-                <th className="px-4 py-4">Verification</th>
-                <th className="px-6 py-4 text-right">Details</th>
+                <th className="px-4 py-4">Database</th>
+                <th className="px-6 py-4 text-right">{isAdmin ? "Actions" : "Details"}</th>
               </tr>
             </thead>
 
@@ -647,7 +558,7 @@ export default function IncidentsPage() {
                           <span>
                             {incident.road}
                             <span className="block text-xs text-[#8794A7]">
-                              {incident.location}
+                              Segment #{incident.segmentId}
                             </span>
                           </span>
                         </p>
@@ -672,20 +583,23 @@ export default function IncidentsPage() {
                   </td>
 
                   <td className="px-4 py-4">
-                    <VerificationBadge
-                      verification={incident.verification}
-                    />
+                    <RecordedBadge />
                   </td>
 
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => setSelectedIncident(incident)}
-                      aria-label={`View incident ${incident.id}`}
-                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#DCE3ED] px-3 text-sm font-semibold text-[#526178] transition hover:border-[#A5C5F0] hover:bg-[#F0F5FD] hover:text-[#294B78]"
-                    >
-                      <Eye size={15} />
-                      View
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setSelectedIncident(incident)} aria-label={`View incident ${incident.id}`} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#DCE3ED] px-3 text-sm font-semibold text-[#526178] hover:bg-[#F0F5FD]">
+                        <Eye size={15} /> View
+                      </button>
+                      {isAdmin && <>
+                        <button onClick={() => startEditing(incident)} aria-label={`Edit incident ${incident.id}`} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#DCE3ED] px-3 text-sm font-semibold text-[#526178] hover:bg-[#F0F5FD]">
+                          <Pencil size={15} /> Edit
+                        </button>
+                        <button onClick={() => { setIncidentToDelete(incident); setDeleteError(""); }} aria-label={`Delete incident ${incident.id}`} className="inline-flex h-9 items-center gap-2 rounded-lg border border-rose-200 px-3 text-sm font-semibold text-rose-700 hover:bg-rose-50">
+                          <Trash2 size={15} /> Delete
+                        </button>
+                      </>}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -729,7 +643,7 @@ export default function IncidentsPage() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <SeverityBadge severity={incident.severity} />
-                <VerificationBadge verification={incident.verification} />
+                <RecordedBadge />
               </div>
             </button>
           ))}
@@ -768,11 +682,11 @@ export default function IncidentsPage() {
 
       {/* Report form modal */}
       {showReportForm && (
-        <Modal onClose={closeReportForm} title="Report an incident">
+        <Modal onClose={closeReportForm} title={editingIncident ? `Edit incident #${editingIncident.id}` : "Report an incident"}>
           <form onSubmit={submitReport} className="space-y-5">
             <p className="text-sm leading-6 text-[#64748B]">
-              Provide the details of the incident. New reports will be marked
-              as pending review in this demonstration.
+              Submit an incident linked to a MySQL road segment. Only fields
+              supported by the current database schema are collected.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -812,33 +726,20 @@ export default function IncidentsPage() {
               </FormField>
             </div>
 
-                        <FormField label="Road segment">
+            <FormField label="Road segment">
               <select
-                value={form.road}
-                onChange={(event) => setForm({ ...form, road: event.target.value })}
+                value={form.segmentId}
+                onChange={(event) => setForm({ ...form, segmentId: event.target.value })}
                 className={fieldClass}
                 required
               >
                 <option value="">Select a road segment</option>
                 {segments.map((segment) => (
-                  <option key={segment.id} value={segment.road}>
+                  <option key={segment.id} value={segment.id}>
                     {segment.road} · Segment #{segment.id}
                   </option>
                 ))}
               </select>
-            </FormField>
-
-            <FormField label="Specific location">
-              <input
-                value={form.location}
-                onChange={(event) =>
-                  setForm({ ...form, location: event.target.value })
-                }
-                maxLength={200}
-                placeholder="e.g. Near the metro entrance"
-                className={fieldClass}
-                required
-              />
             </FormField>
 
             <FormField label="When did it occur?">
@@ -852,23 +753,6 @@ export default function IncidentsPage() {
                 className={fieldClass}
                 required
               />
-            </FormField>
-
-            <FormField label="Incident description">
-              <textarea
-                value={form.description}
-                onChange={(event) =>
-                  setForm({ ...form, description: event.target.value })
-                }
-                maxLength={1000}
-                rows={4}
-                placeholder="Describe what happened and any relevant safety concerns..."
-                className={`${fieldClass} resize-y`}
-                required
-              />
-              <p className="mt-1 text-right text-xs text-[#8794A7]">
-                {form.description.length}/1000
-              </p>
             </FormField>
 
             {formError && (
@@ -890,10 +774,11 @@ export default function IncidentsPage() {
               </button>
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-5 py-3 text-sm font-semibold text-white hover:bg-[#293750]"
+                disabled={isSaving}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-5 py-3 text-sm font-semibold text-white hover:bg-[#293750] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Plus size={17} />
-                Submit report
+                {editingIncident ? <Pencil size={17} /> : <Plus size={17} />}
+                {isSaving ? "Saving..." : editingIncident ? "Save changes" : "Submit report"}
               </button>
             </div>
           </form>
@@ -912,9 +797,7 @@ export default function IncidentsPage() {
                 {typeLabels[selectedIncident.type]}
               </span>
               <SeverityBadge severity={selectedIncident.severity} />
-              <VerificationBadge
-                verification={selectedIncident.verification}
-              />
+              <RecordedBadge />
             </div>
 
             <div className="rounded-xl border border-[#E1E7F0] bg-[#F8FAFD] p-4">
@@ -926,7 +809,7 @@ export default function IncidentsPage() {
                 {selectedIncident.road}
               </p>
               <p className="mt-1 text-sm text-[#64748B]">
-                {selectedIncident.location}
+                Road segment #{selectedIncident.segmentId}
               </p>
             </div>
 
@@ -949,21 +832,10 @@ export default function IncidentsPage() {
               </div>
             </div>
 
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#8794A7]">
-                Description
-              </p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-[#526178]">
-                {selectedIncident.description}
-              </p>
-            </div>
-
             <div className="rounded-xl border border-[#E1E7F0] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#8794A7]">
-                Review notes
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8794A7]">User reference</p>
               <p className="mt-2 text-sm leading-6 text-[#526178]">
-                {selectedIncident.actionTaken}
+                User #{selectedIncident.verifiedBy}
               </p>
             </div>
 
@@ -974,22 +846,32 @@ export default function IncidentsPage() {
               >
                 Close
               </button>
-
-              {selectedIncident.verification === "Pending review" && (
-                <button
-                  onClick={() => markVerified(selectedIncident)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#172033] px-5 py-3 text-sm font-semibold text-white hover:bg-[#293750]"
-                >
-                  <Check size={17} />
-                  Mark as verified
-                </button>
-              )}
+              {isAdmin && <div className="flex gap-2">
+                <button onClick={() => startEditing(selectedIncident)} className="inline-flex items-center gap-2 rounded-xl border border-[#DCE3ED] px-4 py-3 text-sm font-semibold text-[#526178] hover:bg-[#F5F7FB]"><Pencil size={15} /> Edit</button>
+                <button onClick={() => { setIncidentToDelete(selectedIncident); setDeleteError(""); }} className="inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-50"><Trash2 size={15} /> Delete</button>
+              </div>}
             </div>
 
             <p className="text-xs leading-5 text-[#8794A7]">
-              Verification is a demonstration-only action. No actual
-              administrator review or external notification occurs.
+              This schema requires a user reference for each incident. The
+              preview links it to an active administrator account, but it does
+              not implement an actual review workflow.
             </p>
+          </div>
+        </Modal>
+      )}
+
+      {incidentToDelete && (
+        <Modal onClose={() => !isDeleting && setIncidentToDelete(null)} title="Delete incident?">
+          <div className="space-y-5">
+            <p className="text-sm leading-6 text-[#526178]">
+              This permanently deletes incident #{incidentToDelete.id} ({typeLabels[incidentToDelete.type]}) on {incidentToDelete.road} from MySQL. This action cannot be undone.
+            </p>
+            {deleteError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2.5 text-sm text-rose-700">{deleteError}</p>}
+            <div className="flex justify-end gap-3 border-t border-[#E8EDF4] pt-4">
+              <button disabled={isDeleting} onClick={() => setIncidentToDelete(null)} className="rounded-xl border border-[#DCE3ED] px-5 py-3 text-sm font-semibold text-[#526178] hover:bg-[#F5F7FB]">Cancel</button>
+              <button disabled={isDeleting} onClick={deleteIncident} className="inline-flex items-center gap-2 rounded-xl bg-rose-700 px-5 py-3 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-60"><Trash2 size={16} />{isDeleting ? "Deleting..." : "Delete incident"}</button>
+            </div>
           </div>
         </Modal>
       )}

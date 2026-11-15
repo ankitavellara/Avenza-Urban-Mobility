@@ -1,13 +1,22 @@
 
-import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import Sidebar from "@/components/layout/sidebar";
+import AccountControls from "@/components/layout/account-controls";
+import { getAuthenticatedUser } from "@/lib/auth";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  return <Suspense fallback={<DashboardLoading />}><AuthenticatedDashboard>{children}</AuthenticatedDashboard></Suspense>;
+}
+
+async function AuthenticatedDashboard({ children }: { children: React.ReactNode }) {
+  const user = await getAuthenticatedUser();
+  if (!user) redirect("/login?next=%2Fdashboard");
+
   return (
     <div className="min-h-screen bg-[#F5F7FB] text-[#172033] lg:flex">
       <Sidebar />
@@ -23,16 +32,7 @@ export default function DashboardLayout({
             </h1>
           </div>
 
-          <Link
-            href="/"
-            className="flex items-center gap-2 rounded-xl border border-[#E1E7F0] px-3 py-2 text-sm font-semibold hover:bg-[#F5F7FB]"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#A5C5F0] text-[#172033]">
-              G
-            </span>
-            <span className="hidden sm:inline">Guest preview</span>
-            <ChevronDown size={15} className="hidden sm:block" />
-          </Link>
+          <AccountControls name={user.name} role={user.role} />
         </header>
 
         <main className="mx-auto w-full max-w-[1600px] p-4 sm:p-8">
@@ -41,4 +41,8 @@ export default function DashboardLayout({
       </div>
     </div>
   );
+}
+
+function DashboardLoading() {
+  return <div className="flex min-h-screen items-center justify-center bg-[#F5F7FB] text-sm font-medium text-[#64748B]">Checking your Avenza session…</div>;
 }

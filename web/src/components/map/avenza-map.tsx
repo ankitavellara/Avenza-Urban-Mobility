@@ -8,12 +8,13 @@ import { LocateFixed, MapPin } from "lucide-react";
 
 type MapCategory = "incident" | "transport" | "road";
 
-type DemoLocation = {
+type MapLocation = {
   id: string;
   name: string;
   description: string;
   category: MapCategory;
   position: [number, number];
+  path?: [[number, number], [number, number]];
   severity?: "High" | "Medium" | "Low";
 };
 
@@ -22,67 +23,48 @@ type AvenzaMapProps = {
   showFilters?: boolean;
 };
 
-const demoLocations: DemoLocation[] = [
-  {
-    id: "i-1",
-    name: "Illustrative safety report",
-    description: "Example high-severity marker. Not a real report.",
-    category: "incident",
-    position: [12.9758, 77.6066],
-    severity: "High",
-  },
-  {
-    id: "i-2",
-    name: "Illustrative road concern",
-    description: "Example medium-severity marker. Not a real report.",
-    category: "incident",
-    position: [12.9719, 77.6412],
-    severity: "Medium",
-  },
-  {
-    id: "i-3",
-    name: "Illustrative pedestrian concern",
-    description: "Example low-severity marker. Not a real report.",
-    category: "incident",
-    position: [12.9698, 77.6011],
-    severity: "Low",
-  },
-  {
-    id: "t-1",
-    name: "Example metro stop",
-    description: "Illustrative public transport location.",
-    category: "transport",
-    position: [12.9756, 77.6068],
-  },
-  {
-    id: "t-2",
-    name: "Example bus stop",
-    description: "Illustrative public transport location.",
-    category: "transport",
-    position: [12.9784, 77.6408],
-  },
-  {
-    id: "t-3",
-    name: "Example transport interchange",
-    description: "Illustrative public transport location.",
-    category: "transport",
-    position: [12.9612, 77.6387],
-  },
-  {
-    id: "r-1",
-    name: "Example road segment",
-    description: "Illustrative road marker. Ratings are not connected.",
-    category: "road",
-    position: [12.9712, 77.6156],
-  },
-  {
-    id: "r-2",
-    name: "Example pedestrian corridor",
-    description: "Illustrative road marker. Ratings are not connected.",
-    category: "road",
-    position: [12.9821, 77.6178],
-  },
-];
+type MapDataResponse = {
+  success: boolean;
+  error?: string;
+  roads: Array<{
+    id: number;
+    name: string;
+    startLat: number;
+    startLon: number;
+    endLat: number;
+    endLon: number;
+    lengthM: number;
+  }>;
+  stops: Array<{
+    id: number;
+    name: string;
+    type: string;
+    latitude: number;
+    longitude: number;
+  }>;
+  incidents: Array<{
+    id: number;
+    type: string;
+    severity: "HIGH" | "MEDIUM" | "LOW";
+    occurredAt: string;
+    segmentId: number;
+    road: string;
+    latitude: number;
+    longitude: number;
+  }>;
+};
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) =>
+    ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    })[character]!,
+  );
+}
 
 const categoryColors: Record<MapCategory, string> = {
   incident: "#D9485F",
@@ -99,6 +81,9 @@ export default function AvenzaMap({
   const markersRef = useRef<LayerGroup | null>(null);
 
   const [mapReady, setMapReady] = useState(false);
+  const [locations, setLocations] = useState<MapLocation[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState("");
   const [showIncidents, setShowIncidents] = useState(true);
   const [showTransport, setShowTransport] = useState(true);
   const [showRoads, setShowRoads] = useState(true);
@@ -109,14 +94,67 @@ export default function AvenzaMap({
     zoom: number;
   } | null>(null);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadMapData() {
+      try {
+        const response = await fetch("/api/map-data");
+        const data = (await response.json()) as MapDataResponse;
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Could not load map data from MySQL.");
+        }
+
+        const mapLocations: MapLocation[] = [
+          ...data.roads.map((road) => ({
+            id: `road-${road.id}`,
+            name: road.name,
+            description: `Road segment #${road.id} · ${road.lengthM} m`,
+            category: "road" as const,
+            position: [(road.startLat + road.endLat) / 2, (road.startLon + road.endLon) / 2] as [number, number],
+            path: [[road.startLat, road.startLon], [road.endLat, road.endLon]] as [[number, number], [number, number]],
+          })),
+          ...data.stops.map((stop) => ({
+            id: `stop-${stop.id}`,
+            name: stop.name,
+            description: `${stop.type} stop`,
+            category: "transport" as const,
+            position: [stop.latitude, stop.longitude] as [number, number],
+          })),
+          ...data.incidents.map((incident) => ({
+            id: `incident-${incident.id}`,
+            name: `${incident.type} · ${incident.road}`,
+            description: `Incident #${incident.id} on segment #${incident.segmentId}, ${new Date(incident.occurredAt).toLocaleString("en-IN")}`,
+            category: "incident" as const,
+            position: [incident.latitude, incident.longitude] as [number, number],
+            severity: incident.severity.charAt(0) + incident.severity.slice(1).toLowerCase() as "High" | "Medium" | "Low",
+          })),
+        ];
+
+        if (active) setLocations(mapLocations);
+      } catch (error) {
+        if (active) {
+          setDataError(error instanceof Error ? error.message : "Could not load map data.");
+        }
+      } finally {
+        if (active) setDataLoading(false);
+      }
+    }
+
+    loadMapData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const visibleLocations = useMemo(
     () =>
-      demoLocations.filter((location) => {
+      locations.filter((location) => {
         if (location.category === "incident") return showIncidents;
         if (location.category === "transport") return showTransport;
         return showRoads;
       }),
-    [showIncidents, showTransport, showRoads]
+    [locations, showIncidents, showTransport, showRoads]
   );
 
   // Initialize and clean up the Leaflet map.
@@ -176,25 +214,26 @@ export default function AvenzaMap({
 
     visibleLocations.forEach((location) => {
       const color = categoryColors[location.category];
-
-      const marker = L.circleMarker(location.position, {
-        radius: location.category === "incident" ? 9 : 7,
-        color: "#FFFFFF",
-        weight: 2.5,
-        fillColor: color,
-        fillOpacity: 0.95,
-      });
+      const marker = location.path
+        ? L.polyline(location.path, { color, weight: 5, opacity: 0.8 })
+        : L.circleMarker(location.position, {
+            radius: location.category === "incident" ? 9 : 7,
+            color: "#FFFFFF",
+            weight: 2.5,
+            fillColor: color,
+            fillOpacity: 0.95,
+          });
 
       const severity = location.severity
-        ? `<p style="margin:4px 0;color:#B42336;font-size:12px;font-weight:600">Severity: ${location.severity}</p>`
+        ? `<p style="margin:4px 0;color:#B42336;font-size:12px;font-weight:600">Severity: ${escapeHtml(location.severity)}</p>`
         : "";
 
       const popup = `
         <div style="min-width:180px">
-          <strong style="color:#172033">${location.name}</strong>
+          <strong style="color:#172033">${escapeHtml(location.name)}</strong>
           ${severity}
           <p style="margin:6px 0;color:#526178;line-height:1.5">
-            ${location.description}
+            ${escapeHtml(location.description)}
           </p>
           <p style="margin:4px 0;color:#8794A7;font-size:12px">
             ${location.position[0].toFixed(4)}, ${location.position[1].toFixed(4)}
@@ -206,6 +245,14 @@ export default function AvenzaMap({
       marker.addTo(markerLayer);
     });
   }, [mapReady, visibleLocations]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !locations.length || target) return;
+    const bounds = L.latLngBounds(
+      locations.flatMap((location) => location.path ?? [location.position]),
+    );
+    mapRef.current.fitBounds(bounds.pad(0.08), { maxZoom: compact ? 12 : 14 });
+  }, [mapReady, locations, target, compact]);
 
   // Recenter only when the user explicitly requests their location.
   useEffect(() => {
@@ -318,10 +365,17 @@ export default function AvenzaMap({
         {!compact && (
           <div className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-lg border border-white/70 bg-white/95 px-3 py-2 text-xs font-medium text-[#526178] shadow-sm">
             <MapPin size={13} className="mr-1 inline-block" />
-            Bengaluru · Illustrative demo markers
+            Bengaluru · MySQL map records
           </div>
         )}
       </div>
+
+      {dataLoading && (
+        <p role="status" className="text-sm text-[#64748B]">Loading map records from MySQL…</p>
+      )}
+      {dataError && (
+        <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{dataError}</p>
+      )}
 
       {locationMessage && (
         <p role="status" className="text-sm text-[#526178]">
@@ -351,8 +405,7 @@ export default function AvenzaMap({
 
       {compact && (
         <p className="text-xs leading-5 text-[#8794A7]">
-          Demo map: markers are illustrative and aren't live incident or
-          transport data.
+          Road geometry, incident markers, and transport stops are loaded from MySQL.
         </p>
       )}
     </div>
