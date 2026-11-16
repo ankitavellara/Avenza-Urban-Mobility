@@ -366,4 +366,26 @@ USE `avenza_db`;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-10 20:14:42
+
+USE avenza_db;
+
+CREATE TABLE localities (
+    locality_id INT AUTO_INCREMENT PRIMARY KEY,
+    locality_name VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE locality_road_segments (
+    locality_id INT NOT NULL,
+    segment_id INT NOT NULL,
+
+    PRIMARY KEY (locality_id, segment_id),
+
+    FOREIGN KEY (locality_id)
+        REFERENCES localities(locality_id)
+        ON DELETE CASCADE,
+
+    FOREIGN KEY (segment_id)
+        REFERENCES road_segments(segment_id)
+        ON DELETE CASCADE
+);
+

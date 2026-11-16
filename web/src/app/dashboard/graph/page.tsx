@@ -115,9 +115,10 @@ export default function GraphPage() {
       </section>
 
       <div className="rounded-xl border border-[#D9E6F7] bg-[#EDF4FD] px-4 py-3 text-sm leading-6 text-[#526A89]">
-        Graph model: <strong>RoadSegment</strong> —[CONNECTS_TO]—{" "}
-        <strong>RoadSegment</strong>. Connections come from the ordered
-        segments in MySQL routes; transit links use <strong>NEAR_STOP</strong>.
+        Graph model: <strong>Locality</strong> —[HAS_ROAD_SEGMENT]→{" "}
+        <strong>RoadSegment</strong>. Route order uses <strong>HAS_SEGMENT</strong> and consecutive
+        road sections also use <strong>CONNECTS_TO</strong>; transit links use{" "}
+        <strong>NEAR_STOP</strong>.
       </div>
 
       <section className="grid gap-4 sm:grid-cols-3">
@@ -133,9 +134,9 @@ export default function GraphPage() {
               Find available paths
             </h2>
             <p className="mt-1 text-sm leading-6 text-[#64748B]">
-              Choose two Bengaluru localities. Neo4j traverses connected road
-              segments between routes that start and end there, then ranks up to
-              five options by incidents, accessibility, lighting, and distance.
+              Choose two Bengaluru localities. Neo4j uses their mapped road
+              sections and saved route order to find and rank paths by incidents,
+              accessibility, lighting, and distance.
             </p>
           </div>
 

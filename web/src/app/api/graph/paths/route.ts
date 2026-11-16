@@ -23,18 +23,30 @@ export async function GET(request: Request) {
 
   try {
     const result = await getNeo4jDriver().executeQuery(
-      `MATCH (sourceLocality:Locality {name: $from})-[fromEndpoint:HAS_ENDPOINT {role: 'origin'}]->(start:RoadSegment)
-       MATCH (destinationLocality:Locality {name: $to})-[toEndpoint:HAS_ENDPOINT {role: 'destination'}]->(finish:RoadSegment)
-       WHERE fromEndpoint.routeId = toEndpoint.routeId
-       MATCH (route:Route {id: fromEndpoint.routeId})-[startRel:HAS_SEGMENT]->(start)
-       MATCH (route)-[endRel:HAS_SEGMENT]->(finish)
-       WHERE startRel.sequenceNo < endRel.sequenceNo
-       MATCH (route)-[segmentRel:HAS_SEGMENT]->(segment:RoadSegment)
-       WHERE segmentRel.sequenceNo >= startRel.sequenceNo
-         AND segmentRel.sequenceNo <= endRel.sequenceNo
-       WITH route, segmentRel, segment
+      `MATCH (sourceLocality:Locality {name: $from})
+       MATCH (destinationLocality:Locality {name: $to})
+       MATCH (route:Route {origin: $from, destination: $to})-[segmentRel:HAS_SEGMENT]->(segment:RoadSegment)
+       WITH sourceLocality, destinationLocality, route, segmentRel, segment,
+            EXISTS { MATCH (sourceLocality)-[:HAS_ROAD_SEGMENT]->(segment) } AS mappedToOrigin,
+            EXISTS { MATCH (destinationLocality)-[:HAS_ROAD_SEGMENT]->(segment) } AS mappedToDestination
        ORDER BY segmentRel.sequenceNo
-       WITH route, collect(segment) AS pathSegments
+       WITH route, collect({
+         sequenceNo: segmentRel.sequenceNo,
+         segment: segment,
+         mappedToOrigin: mappedToOrigin,
+         mappedToDestination: mappedToDestination
+       }) AS orderedSegments
+       WITH route, orderedSegments,
+            [item IN orderedSegments WHERE item.mappedToOrigin | item.sequenceNo] AS originSequences,
+            [item IN orderedSegments WHERE item.mappedToDestination | item.sequenceNo] AS destinationSequences
+       WITH route, orderedSegments,
+            CASE WHEN size(originSequences) > 0 THEN head(originSequences) ELSE orderedSegments[0].sequenceNo END AS startSequence,
+            CASE WHEN size(destinationSequences) > 0 THEN last(destinationSequences) ELSE orderedSegments[-1].sequenceNo END AS endSequence
+       WITH route, orderedSegments,
+            CASE WHEN startSequence <= endSequence THEN startSequence ELSE orderedSegments[0].sequenceNo END AS firstSequence,
+            CASE WHEN startSequence <= endSequence THEN endSequence ELSE orderedSegments[-1].sequenceNo END AS lastSequence
+       WITH route,
+            [item IN orderedSegments WHERE item.sequenceNo >= firstSequence AND item.sequenceNo <= lastSequence | item.segment] AS pathSegments
        RETURN route.id AS routeId,
               route.name AS routeName,
               route.origin AS origin,

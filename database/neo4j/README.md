@@ -10,7 +10,7 @@ Neo4j credentials.
 | Node | Key and properties | Source |
 |---|---|---|
 | `Route` | `id`, `name`, `origin`, `destination` | MySQL `routes` |
-| `Locality` | `name` | Distinct MySQL `routes.origin` and `routes.destination` values |
+| `Locality` | `name` | MySQL `localities` |
 | `RoadSegment` | `id`, `name`, `lengthM`, lighting/condition/accessibility ratings, incident count | MySQL `road_segments`, `segment_infrastructure`, `incidents` |
 | `TransportStop` | `id`, `name`, `type`, `latitude`, `longitude` | MySQL `transport_stops` |
 | `Incident` | `id`, `type`, `severity`, `occurredAt` | MySQL `incidents` |
@@ -19,12 +19,10 @@ Relationships:
 
 - `(Route)-[:HAS_SEGMENT {sequenceNo}]->(RoadSegment)` comes from
   `route_segments` and preserves route order. Locality searches use this ordered
-  relationship to retrieve segments between matching route endpoints.
-- `(Locality)-[:HAS_ENDPOINT {role, routeId}]->(RoadSegment)` maps each saved
-  route's origin locality to its first ordered segment and its destination
-  locality to its last ordered segment. This endpoint mapping is projected from
-  `routes` and `route_segments` during graph sync, so both dropdowns use the
-  same unique locality list without a separately maintained list.
+  relationship to retrieve segments between mapped localities.
+- `(Locality)-[:HAS_ROAD_SEGMENT]->(RoadSegment)` comes from
+  `locality_road_segments` and maps each locality to its associated road
+  sections. The graph page's two dropdowns use the names in MySQL `localities`.
 - `(RoadSegment)-[:CONNECTS_TO {routeId, fromSequence, toSequence}]->(RoadSegment)`
   links consecutive segments in each predefined route and preserves the
   directed sequence for graph analysis.
@@ -35,12 +33,15 @@ Relationships:
 
 The API creates unique constraints for node IDs and refreshes the graph
 projection from MySQL in one Neo4j transaction when the Graph page loads. Path
-searches then query Neo4j directly without repeating the MySQL sync. They accept
-locality names, match saved routes with those endpoints, and retrieve their
-ordered road segments, nearby stops, and incidents. The API returns compact
-graph counts and locality names instead of sending the full graph route catalog
-to the browser. MySQL handles authoritative records and
-integrity; Neo4j handles route and incident traversal. The ranking is a
+searches then query Neo4j directly without repeating the MySQL sync. They
+match saved routes for the selected localities and use mapped locality road
+sections to choose the matching portion of each route when available. If the
+mapping does not intersect a saved route, search falls back to that route's
+full ordered segment sequence. This keeps route results available while the
+mapping table is incomplete. Results include nearby stops and individual
+incidents. The API returns compact graph counts and locality names instead of
+sending the full graph route catalog to the browser. MySQL handles authoritative
+records and integrity; Neo4j handles route and incident traversal. The ranking is a
 demonstration heuristic, not a safety guarantee or turn-by-turn navigation
 result. Connections follow stored route sequences; geographic continuity has
 not been verified.

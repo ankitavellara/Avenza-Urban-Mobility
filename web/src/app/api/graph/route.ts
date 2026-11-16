@@ -45,11 +45,13 @@ type RouteEdge = {
   toSequence: number;
 };
 
-type LocalityEndpoint = {
+type LocalityRow = {
+  name: string;
+};
+
+type LocalitySegmentRow = {
   name: string;
   segmentId: number;
-  routeId: number;
-  role: "origin" | "destination";
 };
 
 function numberValue(value: unknown) {
@@ -57,7 +59,7 @@ function numberValue(value: unknown) {
 }
 
 async function synchronizeGraph() {
-  const [routeRowsResult, stopRowsResult, incidentRowsResult] = await Promise.all([
+  const [routeRowsResult, stopRowsResult, incidentRowsResult, localityRowsResult, localitySegmentRowsResult] = await Promise.all([
     pool.query(`
       SELECT
         r.route_id AS routeId,
@@ -106,24 +108,29 @@ async function synchronizeGraph() {
       FROM incidents
       ORDER BY incident_id
     `),
+    pool.query(`
+      SELECT locality_name AS name
+      FROM localities
+      ORDER BY locality_name
+    `),
+    pool.query(`
+      SELECT l.locality_name AS name, m.segment_id AS segmentId
+      FROM locality_road_segments m
+      INNER JOIN localities l ON l.locality_id = m.locality_id
+      INNER JOIN road_segments s ON s.segment_id = m.segment_id
+      ORDER BY l.locality_name, m.segment_id
+    `),
   ]);
 
   const routeSegments = routeRowsResult[0] as RouteSegmentRow[];
   const stopLinks = stopRowsResult[0] as StopLinkRow[];
   const incidents = incidentRowsResult[0] as IncidentRow[];
+  const localities = localityRowsResult[0] as LocalityRow[];
+  const localitySegments = localitySegmentRowsResult[0] as LocalitySegmentRow[];
   const routeEdges: RouteEdge[] = [];
-  const localityEndpoints: LocalityEndpoint[] = [];
-  const localities = new Map<string, { origin?: RouteSegmentRow; destination?: RouteSegmentRow }>();
   let previous: RouteSegmentRow | undefined;
 
   for (const row of routeSegments) {
-    const localityEndpointsForRoute = localities.get(String(row.routeId));
-    if (!localityEndpointsForRoute) {
-      localities.set(String(row.routeId), { origin: row, destination: row });
-    } else {
-      localityEndpointsForRoute.destination = row;
-    }
-
     if (previous?.routeId === row.routeId) {
       routeEdges.push({
         routeId: row.routeId,
@@ -134,25 +141,6 @@ async function synchronizeGraph() {
       });
     }
     previous = row;
-  }
-
-  for (const endpoints of localities.values()) {
-    if (endpoints.origin && endpoints.destination) {
-      localityEndpoints.push(
-        {
-          name: endpoints.origin.origin.trim(),
-          segmentId: endpoints.origin.segmentId,
-          routeId: endpoints.origin.routeId,
-          role: "origin",
-        },
-        {
-          name: endpoints.destination.destination.trim(),
-          segmentId: endpoints.destination.segmentId,
-          routeId: endpoints.destination.routeId,
-          role: "destination",
-        },
-      );
-    }
   }
 
   const driver = getNeo4jDriver();
@@ -215,13 +203,21 @@ async function synchronizeGraph() {
         );
       }
 
-      if (localityEndpoints.length > 0) {
+      if (localities.length > 0) {
         await tx.run(
           `UNWIND $rows AS row
+           MERGE (:Locality {name: row.name})`,
+          { rows: localities },
+        );
+      }
+
+      if (localitySegments.length > 0) {
+        await tx.run(
+          `UNWIND $rows AS row
+           MATCH (l:Locality {name: row.name})
            MATCH (s:RoadSegment {id: row.segmentId})
-           MERGE (l:Locality {name: row.name})
-           MERGE (l)-[rel:HAS_ENDPOINT {role: row.role, routeId: row.routeId}]->(s)`,
-          { rows: localityEndpoints },
+           MERGE (l)-[:HAS_ROAD_SEGMENT]->(s)`,
+          { rows: localitySegments },
         );
       }
 
