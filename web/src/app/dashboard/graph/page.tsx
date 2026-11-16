@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { GitBranch, MapPin } from "lucide-react";
+import Neo4jGraphView from "@/components/graph/neo4j-graph-view";
 
 type NearbyStop = {
   id: number;
@@ -51,6 +52,7 @@ export default function GraphPage() {
   const [error, setError] = useState("");
   const [localitiesError, setLocalitiesError] = useState("");
   const [loadingLocalities, setLoadingLocalities] = useState(true);
+  const [graphReady, setGraphReady] = useState(false);
 
   useEffect(() => {
     fetch("/api/localities")
@@ -73,6 +75,7 @@ export default function GraphPage() {
           throw new Error(data.error || "Could not connect to Neo4j.");
         }
         setStats(data.stats ?? { routes: 0, roadSegments: 0, transportStops: 0 });
+        setGraphReady(true);
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : "Could not connect to Neo4j.");
@@ -142,6 +145,8 @@ export default function GraphPage() {
         <Metric label="Connected road segments" value={stats?.roadSegments} />
         <Metric label="Connected transit stops" value={stats?.transportStops} />
       </section>
+
+      <Neo4jGraphView localities={localities} ready={graphReady} />
 
       <section className="rounded-2xl border border-[#E1E7F0] bg-white p-5 shadow-sm sm:p-6">
           <div>
