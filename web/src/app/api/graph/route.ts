@@ -13,6 +13,10 @@ type RouteSegmentRow = {
   segmentId: number;
   roadName: string;
   lengthM: number;
+  startLat: number | string;
+  startLon: number | string;
+  endLat: number | string;
+  endLon: number | string;
   lightingLevel: number | null;
   roadConditionLevel: number | null;
   accessibilityLevel: number | null;
@@ -25,8 +29,6 @@ type StopLinkRow = {
   transportType: string;
   latitude: number;
   longitude: number;
-  segmentId: number;
-  distanceM: number;
 };
 
 type IncidentRow = {
@@ -34,6 +36,7 @@ type IncidentRow = {
   segmentId: number;
   incidentType: string;
   severity: string;
+  description: string | null;
   occurredAt: string;
 };
 
@@ -58,6 +61,28 @@ function numberValue(value: unknown) {
   return neo4j.isInt(value) ? value.toNumber() : Number(value);
 }
 
+function distanceToSegmentM(
+  latitude: number,
+  longitude: number,
+  segment: RouteSegmentRow,
+) {
+  const lat = Number(segment.startLat);
+  const lon = Number(segment.startLon);
+  const endLat = Number(segment.endLat);
+  const endLon = Number(segment.endLon);
+  const metersPerDegreeLat = 111_320;
+  const metersPerDegreeLon = 111_320 * Math.cos((latitude * Math.PI) / 180);
+  const pointX = (longitude - lon) * metersPerDegreeLon;
+  const pointY = (latitude - lat) * metersPerDegreeLat;
+  const endX = (endLon - lon) * metersPerDegreeLon;
+  const endY = (endLat - lat) * metersPerDegreeLat;
+  const segmentLengthSquared = endX * endX + endY * endY;
+  const projection = segmentLengthSquared === 0
+    ? 0
+    : Math.max(0, Math.min(1, (pointX * endX + pointY * endY) / segmentLengthSquared));
+  return Math.round(Math.hypot(pointX - projection * endX, pointY - projection * endY));
+}
+
 async function synchronizeGraph() {
   const [routeRowsResult, stopRowsResult, incidentRowsResult, localityRowsResult, localitySegmentRowsResult] = await Promise.all([
     pool.query(`
@@ -70,6 +95,10 @@ async function synchronizeGraph() {
         s.segment_id AS segmentId,
         s.road_name AS roadName,
         s.length_m AS lengthM,
+        s.start_lat AS startLat,
+        s.start_lon AS startLon,
+        s.end_lat AS endLat,
+        s.end_lon AS endLon,
         si.lighting_level AS lightingLevel,
         si.road_condition_level AS roadConditionLevel,
         si.accessibility_level AS accessibilityLevel,
@@ -87,16 +116,13 @@ async function synchronizeGraph() {
     `),
     pool.query(`
       SELECT
-        ts.stop_id AS stopId,
-        ts.stop_name AS stopName,
-        ts.transport_type AS transportType,
-        ts.latitude,
-        ts.longitude,
-        st.segment_id AS segmentId,
-        st.distance_m AS distanceM
-      FROM segment_transport st
-      INNER JOIN transport_stops ts ON ts.stop_id = st.stop_id
-      ORDER BY ts.stop_id, st.segment_id
+        stop_id AS stopId,
+        stop_name AS stopName,
+        transport_type AS transportType,
+        latitude,
+        longitude
+      FROM transport_stops
+      ORDER BY stop_id
     `),
     pool.query(`
       SELECT
@@ -104,6 +130,7 @@ async function synchronizeGraph() {
         segment_id AS segmentId,
         incident_type AS incidentType,
         severity,
+        description,
         DATE_FORMAT(occurred_at, '%Y-%m-%d %H:%i:%s') AS occurredAt
       FROM incidents
       ORDER BY incident_id
@@ -123,7 +150,7 @@ async function synchronizeGraph() {
   ]);
 
   const routeSegments = routeRowsResult[0] as RouteSegmentRow[];
-  const stopLinks = stopRowsResult[0] as StopLinkRow[];
+  const stops = stopRowsResult[0] as StopLinkRow[];
   const incidents = incidentRowsResult[0] as IncidentRow[];
   const localities = localityRowsResult[0] as LocalityRow[];
   const localitySegments = localitySegmentRowsResult[0] as LocalitySegmentRow[];
@@ -142,6 +169,22 @@ async function synchronizeGraph() {
     }
     previous = row;
   }
+
+  // The legacy segment_transport seed contains generated pairings and distances.
+  // Recompute proximity from the stored coordinates and only keep stops within 800 m.
+  const segmentsById = new Map<number, RouteSegmentRow>();
+  for (const segment of routeSegments) segmentsById.set(segment.segmentId, segment);
+  const stopLinks = [...segmentsById.values()].flatMap((segment) =>
+    stops
+      .map((stop) => ({
+        ...stop,
+        segmentId: segment.segmentId,
+        distanceM: distanceToSegmentM(Number(stop.latitude), Number(stop.longitude), segment),
+      }))
+      .filter((stop) => stop.distanceM <= 800)
+      .sort((a, b) => a.distanceM - b.distanceM)
+      .slice(0, 3),
+  );
 
   const driver = getNeo4jDriver();
   const session = driver.session({ database: getNeo4jDatabase() });
@@ -244,6 +287,7 @@ async function synchronizeGraph() {
              id: row.incidentId,
              type: row.incidentType,
              severity: row.severity,
+             description: row.description,
              occurredAt: row.occurredAt
            })
            CREATE (s)-[:HAS_INCIDENT]->(incident)`,

@@ -15,7 +15,7 @@ export default function MapPage() {
           stops loaded from the Avenza database.
         </p>
       </header>
-      <MapClient showFilters />
+      <MapClient showFilters routeView />
     </div>
   );
 }

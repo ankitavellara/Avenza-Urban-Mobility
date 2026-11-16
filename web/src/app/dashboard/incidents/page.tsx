@@ -26,10 +26,12 @@ type Incident = {
   segmentId: number;
   type: IncidentType;
   severity: Severity;
+  description: string;
   road: string;
   occurredAt: string;
   reportedAt: string;
-  verifiedBy: number;
+  reportedBy: number | null;
+  verifiedBy: number | null;
 };
 
 const typeLabels: Record<IncidentType, string> = {
@@ -113,6 +115,7 @@ export default function IncidentsPage() {
   const [form, setForm] = useState({
     type: "OTHER" as IncidentType,
     severity: "MEDIUM" as Severity,
+    description: "",
     segmentId: "",
     occurredAt: "",
   });
@@ -147,11 +150,13 @@ export default function IncidentsPage() {
           id: Number(item.id),
           type: item.type as IncidentType,
           severity: item.severity as Severity,
+          description: String(item.description ?? ""),
           road: item.road || `Segment ${item.segmentId}`,
           occurredAt: item.occurredAt,
           reportedAt: item.reportedAt,
           segmentId: Number(item.segmentId),
-          verifiedBy: Number(item.verifiedBy),
+          reportedBy: item.reportedBy == null ? null : Number(item.reportedBy),
+          verifiedBy: item.verifiedBy == null ? null : Number(item.verifiedBy),
         })));
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Failed to load incidents.");
@@ -220,8 +225,8 @@ export default function IncidentsPage() {
     event.preventDefault();
     setFormError("");
 
-    if (!form.segmentId || !form.occurredAt) {
-      setFormError("Please complete all required fields.");
+    if (!form.segmentId || !form.occurredAt || form.description.trim().length < 10) {
+      setFormError("Choose a road segment, enter when it happened, and describe it in at least 10 characters.");
       return;
     }
 
@@ -259,6 +264,7 @@ export default function IncidentsPage() {
           segmentId: selectedSegment.id,
           type: form.type,
           severity: form.severity,
+          description: form.description.trim(),
           occurredAt: form.occurredAt,
         }),
       });
@@ -281,10 +287,12 @@ export default function IncidentsPage() {
       segmentId: Number(savedIncident.segmentId),
       type: savedIncident.type as IncidentType,
       severity: savedIncident.severity as Severity,
+      description: String(savedIncident.description ?? ""),
       road: savedIncident.road || selectedSegment.road,
       occurredAt: savedIncident.occurredAt,
       reportedAt: savedIncident.reportedAt,
-      verifiedBy: Number(savedIncident.verifiedBy),
+      reportedBy: savedIncident.reportedBy == null ? null : Number(savedIncident.reportedBy),
+      verifiedBy: savedIncident.verifiedBy == null ? null : Number(savedIncident.verifiedBy),
     };
 
     if (editingIncident) {
@@ -304,6 +312,7 @@ export default function IncidentsPage() {
     setForm({
       type: "OTHER",
       severity: "MEDIUM",
+      description: "",
       segmentId: "",
       occurredAt: "",
     });
@@ -320,6 +329,7 @@ export default function IncidentsPage() {
     setForm({
       type: incident.type,
       severity: incident.severity,
+      description: incident.description,
       segmentId: String(incident.segmentId),
       occurredAt: toDateTimeLocal(incident.occurredAt),
     });
@@ -364,15 +374,14 @@ export default function IncidentsPage() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748B] sm:text-base">
-            Review reported incidents, identify safety concerns, and keep
-            community reports organized in one place.
+            Report incidents with their intensity and description, then review community reports.
           </p>
         </div>
 
         <button
           onClick={() => {
             setEditingIncident(null);
-            setForm({ type: "OTHER", severity: "MEDIUM", segmentId: "", occurredAt: "" });
+            setForm({ type: "OTHER", severity: "MEDIUM", description: "", segmentId: "", occurredAt: "" });
             setFormError("");
             setShowReportForm(true);
           }}
@@ -394,8 +403,7 @@ export default function IncidentsPage() {
             MySQL incident records
           </p>
           <p className="mt-0.5 text-sm leading-5 text-[#526A89]">
-            Incidents are loaded from MySQL. The current schema stores the road
-            segment, type, severity, occurrence time, report time, and verifier.
+            Signed-in users can submit detailed reports to MySQL. New reports are linked to the reporter account and await administrator verification.
           </p>
         </div>
       </div>
@@ -410,21 +418,21 @@ export default function IncidentsPage() {
           iconClass="bg-[#EAF2FD] text-[#4B76B7]"
         />
         <StatCard
-          label="High severity"
+          label="High intensity"
           value={stats.high}
           description="Reports marked high"
           icon={<AlertTriangle size={20} />}
           iconClass="bg-rose-50 text-rose-600"
         />
         <StatCard
-          label="Medium severity"
+          label="Moderate intensity"
           value={stats.medium}
           description="Stored medium-severity reports"
           icon={<AlertTriangle size={20} />}
           iconClass="bg-amber-50 text-amber-600"
         />
         <StatCard
-          label="Low severity"
+          label="Low intensity"
           value={stats.low}
           description="Stored low-severity reports"
           icon={<ShieldCheck size={20} />}
@@ -483,13 +491,13 @@ export default function IncidentsPage() {
           {/* Filters */}
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <FilterSelect
-              label="Severity"
+              label="Intensity"
               value={severityFilter}
               onChange={setSeverityFilter}
               options={[
-                ["ALL", "All severities"],
+                ["ALL", "All intensities"],
                 ["HIGH", "High"],
-                ["MEDIUM", "Medium"],
+                ["MEDIUM", "Moderate"],
                 ["LOW", "Low"],
               ]}
             />
@@ -525,7 +533,7 @@ export default function IncidentsPage() {
             <thead className="bg-[#F8FAFD]">
               <tr className="border-b border-[#E8EDF4] text-xs font-bold uppercase tracking-wider text-[#7B8798]">
                 <th className="px-6 py-4">Incident</th>
-                <th className="px-4 py-4">Severity</th>
+                <th className="px-4 py-4">Intensity</th>
                 <th className="px-4 py-4">Reported</th>
                 <th className="px-4 py-4">Database</th>
                 <th className="px-6 py-4 text-right">{isAdmin ? "Actions" : "Details"}</th>
@@ -685,8 +693,7 @@ export default function IncidentsPage() {
         <Modal onClose={closeReportForm} title={editingIncident ? `Edit incident #${editingIncident.id}` : "Report an incident"}>
           <form onSubmit={submitReport} className="space-y-5">
             <p className="text-sm leading-6 text-[#64748B]">
-              Submit an incident linked to a MySQL road segment. Only fields
-              supported by the current database schema are collected.
+              Describe what happened, select its intensity, and link it to the affected road segment.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -708,7 +715,7 @@ export default function IncidentsPage() {
                 </select>
               </FormField>
 
-              <FormField label="Severity">
+              <FormField label="Intensity">
                 <select
                   value={form.severity}
                   onChange={(event) =>
@@ -720,11 +727,24 @@ export default function IncidentsPage() {
                   className={fieldClass}
                 >
                   <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
+                  <option value="MEDIUM">Moderate</option>
                   <option value="HIGH">High</option>
                 </select>
               </FormField>
             </div>
+
+            <FormField label="What happened?">
+              <textarea
+                value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.target.value })}
+                className={`${fieldClass} min-h-28 resize-y`}
+                placeholder="Briefly describe the incident and any relevant details. Avoid including private personal information."
+                minLength={10}
+                maxLength={2000}
+                required
+              />
+              <p className="mt-1 text-right text-xs text-[#8794A7]">{form.description.length}/2000</p>
+            </FormField>
 
             <FormField label="Road segment">
               <select
@@ -833,9 +853,17 @@ export default function IncidentsPage() {
             </div>
 
             <div className="rounded-xl border border-[#E1E7F0] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#8794A7]">User reference</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8794A7]">Incident description</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#526178]">
+                {selectedIncident.description || "No description was added to this legacy record."}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-[#E1E7F0] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8794A7]">Report status</p>
               <p className="mt-2 text-sm leading-6 text-[#526178]">
-                User #{selectedIncident.verifiedBy}
+                {selectedIncident.reportedBy ? `Reported by user #${selectedIncident.reportedBy}.` : "Legacy report with no reporter recorded."}{" "}
+                {selectedIncident.verifiedBy ? `Verified by user #${selectedIncident.verifiedBy}.` : "No verification has been recorded."}
               </p>
             </div>
 
@@ -852,11 +880,6 @@ export default function IncidentsPage() {
               </div>}
             </div>
 
-            <p className="text-xs leading-5 text-[#8794A7]">
-              This schema requires a user reference for each incident. The
-              preview links it to an active administrator account, but it does
-              not implement an actual review workflow.
-            </p>
           </div>
         </Modal>
       )}

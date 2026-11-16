@@ -9,6 +9,7 @@ import {
   Signpost,
   ShieldAlert,
   BusFront,
+  GitBranch,
   Menu,
   X,
 } from "lucide-react";
@@ -30,6 +31,11 @@ const navigation = [
     label: "Routes",
     href: "/dashboard/routes",
     icon: Map,
+  },
+  {
+    label: "Neo4j graph",
+    href: "/dashboard/graph",
+    icon: GitBranch,
   },
   {
     label: "Road segments",

@@ -20,6 +20,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     const segmentId = Number(body.segmentId);
     const type = String(body.type ?? "").toUpperCase();
     const severity = String(body.severity ?? "").toUpperCase();
+    const description = String(body.description ?? "").trim();
     const occurredAt = String(body.occurredAt ?? "");
     const date = new Date(occurredAt);
 
@@ -31,6 +32,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     }
     if (!allowedSeverities.includes(severity)) {
       return NextResponse.json({ success: false, error: "Invalid severity." }, { status: 400 });
+    }
+    if (description.length < 10 || description.length > 2000) {
+      return NextResponse.json({ success: false, error: "Description must be between 10 and 2,000 characters." }, { status: 400 });
     }
     if (!occurredAt || Number.isNaN(date.getTime()) || date.getTime() > Date.now()) {
       return NextResponse.json({ success: false, error: "Enter a valid occurrence date and time that is not in the future." }, { status: 400 });
@@ -46,15 +50,16 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
     await pool.execute(
       `UPDATE incidents
-       SET segment_id = ?, incident_type = ?, severity = ?, occurred_at = ?
+       SET segment_id = ?, incident_type = ?, severity = ?, description = ?, occurred_at = ?
        WHERE incident_id = ?`,
-      [segmentId, type, severity, occurredAt.replace("T", " ").slice(0, 19), id]
+      [segmentId, type, severity, description, occurredAt.replace("T", " ").slice(0, 19), id]
     );
 
     const [rows] = await pool.query(
       `SELECT i.incident_id AS id, i.segment_id AS segmentId, s.road_name AS road,
-              i.incident_type AS type, i.severity AS severity, i.occurred_at AS occurredAt,
-              i.reported_at AS reportedAt, i.verified_by AS verifiedBy
+              i.incident_type AS type, i.severity AS severity, i.description AS description,
+              i.occurred_at AS occurredAt, i.reported_at AS reportedAt,
+              i.reported_by AS reportedBy, i.verified_by AS verifiedBy
        FROM incidents i INNER JOIN road_segments s ON s.segment_id = i.segment_id
        WHERE i.incident_id = ?`,
       [id]

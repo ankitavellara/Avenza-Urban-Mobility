@@ -15,9 +15,11 @@ const AvenzaMap = dynamic(() => import("./avenza-map"), {
 export default function MapClient({
   compact = false,
   showFilters = true,
+  routeView = false,
 }: {
   compact?: boolean;
   showFilters?: boolean;
+  routeView?: boolean;
 }) {
-  return <AvenzaMap compact={compact} showFilters={showFilters} />;
+  return <AvenzaMap compact={compact} showFilters={showFilters} routeView={routeView} />;
 }

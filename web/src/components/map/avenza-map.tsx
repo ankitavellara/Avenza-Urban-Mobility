@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import type { Map as LeafletMap, LayerGroup } from "leaflet";
-import { LocateFixed, MapPin } from "lucide-react";
+import { LocateFixed, MapPin, Navigation } from "lucide-react";
+import Link from "next/link";
 
 type MapCategory = "incident" | "transport" | "road";
 
@@ -15,12 +16,14 @@ type MapLocation = {
   category: MapCategory;
   position: [number, number];
   path?: [[number, number], [number, number]];
+  lengthM?: number;
   severity?: "High" | "Medium" | "Low";
 };
 
 type AvenzaMapProps = {
   compact?: boolean;
   showFilters?: boolean;
+  routeView?: boolean;
 };
 
 type MapDataResponse = {
@@ -75,6 +78,7 @@ const categoryColors: Record<MapCategory, string> = {
 export default function AvenzaMap({
   compact = false,
   showFilters = true,
+  routeView = false,
 }: AvenzaMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -89,10 +93,36 @@ export default function AvenzaMap({
   const [showRoads, setShowRoads] = useState(true);
   const [locating, setLocating] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
+  const [routeSegmentIds, setRouteSegmentIds] = useState<number[]>([]);
+  const [routeTitle, setRouteTitle] = useState("");
+  const [routeEndpoints, setRouteEndpoints] = useState("");
+  const [googleMapsUrl, setGoogleMapsUrl] = useState("");
   const [target, setTarget] = useState<{
     position: [number, number];
     zoom: number;
   } | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ids = (params.get("segments") ?? "")
+      .split(",")
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id > 0);
+    setRouteSegmentIds([...new Set(ids)]);
+    setRouteTitle(params.get("route") ?? "");
+    const from = params.get("from");
+    const to = params.get("to");
+    if (from && to) {
+      setRouteEndpoints(`${from} → ${to}`);
+      const directions = new URLSearchParams({
+        api: "1",
+        origin: `${from}, Bengaluru, India`,
+        destination: `${to}, Bengaluru, India`,
+        travelmode: "walking",
+      });
+      setGoogleMapsUrl(`https://www.google.com/maps/dir/?${directions.toString()}`);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -213,9 +243,20 @@ export default function AvenzaMap({
     markerLayer.clearLayers();
 
     visibleLocations.forEach((location) => {
-      const color = categoryColors[location.category];
+      const segmentId = location.category === "road" ? Number(location.id.slice("road-".length)) : 0;
+      const isSelectedRouteSegment = routeSegmentIds.includes(segmentId);
+      const hasSelectedRoute = routeSegmentIds.length > 0;
+      const color = isSelectedRouteSegment
+        ? "#E26A35"
+        : hasSelectedRoute && location.category === "road"
+          ? "#9AA7B8"
+          : categoryColors[location.category];
       const marker = location.path
-        ? L.polyline(location.path, { color, weight: 5, opacity: 0.8 })
+        ? L.polyline(location.path, {
+            color,
+            weight: isSelectedRouteSegment ? 8 : hasSelectedRoute ? 3 : 5,
+            opacity: isSelectedRouteSegment ? 0.98 : hasSelectedRoute ? 0.28 : 0.8,
+          })
         : L.circleMarker(location.position, {
             radius: location.category === "incident" ? 9 : 7,
             color: "#FFFFFF",
@@ -244,15 +285,19 @@ export default function AvenzaMap({
       marker.bindPopup(popup);
       marker.addTo(markerLayer);
     });
-  }, [mapReady, visibleLocations]);
+  }, [mapReady, visibleLocations, routeSegmentIds]);
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !locations.length || target) return;
+    const selectedRouteLocations = routeSegmentIds.length
+      ? locations.filter((location) => location.category === "road" && routeSegmentIds.includes(Number(location.id.slice("road-".length))))
+      : locations;
+    const locationsToFit = selectedRouteLocations.length ? selectedRouteLocations : locations;
     const bounds = L.latLngBounds(
-      locations.flatMap((location) => location.path ?? [location.position]),
+      locationsToFit.flatMap((location) => location.path ?? [location.position]),
     );
     mapRef.current.fitBounds(bounds.pad(0.08), { maxZoom: compact ? 12 : 14 });
-  }, [mapReady, locations, target, compact]);
+  }, [mapReady, locations, target, compact, routeSegmentIds]);
 
   // Recenter only when the user explicitly requests their location.
   useEffect(() => {
@@ -312,6 +357,33 @@ export default function AvenzaMap({
 
   return (
     <div className="space-y-3">
+      {routeView && routeSegmentIds.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#F3D5C4] bg-[#FFF8F3] px-4 py-3">
+          <div>
+            <p className="text-sm font-bold text-[#8B4828]">Route highlighted{routeTitle ? `: ${routeTitle}` : ""}</p>
+            {routeEndpoints && <p className="mt-0.5 text-sm text-[#795B4B]">{routeEndpoints}</p>}
+          </div>
+          <Link href="/dashboard/map" className="text-sm font-semibold text-[#365F98] hover:underline">Clear route</Link>
+        </div>
+      )}
+      {routeView && routeSegmentIds.length > 0 && googleMapsUrl && (
+        <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#DCE3ED] bg-white p-4 shadow-sm">
+          <div>
+            <p className="flex items-center gap-2 font-bold text-[#172033]"><Navigation size={17} className="text-[#E26A35]" />Start journey</p>
+            <p className="mt-1 max-w-3xl text-sm leading-5 text-[#64748B]">
+              {routeEndpoints ? `Open walking directions for ${routeEndpoints} in Google Maps. Google Maps may choose a different route than the Avenza suggestion highlighted here.` : "Open walking directions in Google Maps."}
+            </p>
+          </div>
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#172033] px-5 py-3 text-sm font-semibold !text-white transition hover:bg-[#293750]"
+          >
+            <Navigation size={16} /> Start journey in Google Maps
+          </a>
+        </section>
+      )}
       {showFilters && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-xl border border-[#E1E7F0] bg-white px-4 py-3">
           <span className="text-xs font-bold uppercase tracking-wider text-[#8794A7]">

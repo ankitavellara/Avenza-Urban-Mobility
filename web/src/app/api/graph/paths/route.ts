@@ -70,6 +70,7 @@ export async function GET(request: Request) {
                     id: incident.id,
                     type: incident.type,
                     severity: incident.severity,
+                    description: incident.description,
                     occurredAt: incident.occurredAt
                   }
                 ]
@@ -107,6 +108,7 @@ export async function GET(request: Request) {
               id: numberValue(incident.id),
               type: incident.type as string,
               severity: incident.severity as string,
+              description: (incident.description as string | null) ?? "",
               occurredAt: incident.occurredAt as string,
             }),
           ),

@@ -140,6 +140,15 @@ Primary keys, foreign keys, uniqueness constraints, check constraints, and index
 
 The associative tables `route\_segments` and `segment\_transport` implement many-to-many relationships. `segment\_infrastructure` stores infrastructure ratings for individual road segments.
 
+### Community incident reports
+
+The incidents API stores the signed-in reporter in `reported_by`, the incident
+intensity in the existing `severity` field (`LOW`, `MEDIUM`, or `HIGH`), and
+the user-provided narrative in `description`. `verified_by` stays `NULL` until
+a verification is recorded. The UI does not yet provide an administrator
+verification action. For an existing database, apply
+`sql/09_incident_reporting_migration.sql` once before using incident reporting.
+
 
 
 The `source\_observation\_id` field in `incidents` is retained from an earlier design and is not currently connected to Neo4j or another data store.

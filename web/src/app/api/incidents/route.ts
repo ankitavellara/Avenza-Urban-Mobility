@@ -16,8 +16,10 @@ export async function GET() {
         s.road_name AS road,
         i.incident_type AS type,
         i.severity AS severity,
+        i.description AS description,
         i.occurred_at AS occurredAt,
         i.reported_at AS reportedAt,
+        i.reported_by AS reportedBy,
         i.verified_by AS verifiedBy
       FROM incidents i
       INNER JOIN road_segments s ON s.segment_id = i.segment_id
@@ -42,6 +44,7 @@ export async function POST(request: Request) {
     const segmentId = Number(body.segmentId);
     const type = String(body.type ?? "").toUpperCase();
     const severity = String(body.severity ?? "").toUpperCase();
+    const description = String(body.description ?? "").trim();
     const occurredAt = String(body.occurredAt ?? "");
 
     if (!Number.isInteger(segmentId) || segmentId <= 0) {
@@ -53,27 +56,18 @@ export async function POST(request: Request) {
     if (!allowedSeverities.includes(severity)) {
       return NextResponse.json({ success: false, error: "Invalid severity." }, { status: 400 });
     }
+    if (description.length < 10 || description.length > 2000) {
+      return NextResponse.json({ success: false, error: "Description must be between 10 and 2,000 characters." }, { status: 400 });
+    }
     if (!occurredAt || Number.isNaN(Date.parse(occurredAt))) {
       return NextResponse.json({ success: false, error: "A valid occurrence date and time is required." }, { status: 400 });
     }
 
-    const [users] = await pool.query(
-      "SELECT user_id FROM users WHERE is_active = 1 ORDER BY (role = 'ADMIN') DESC, user_id LIMIT 1"
-    );
-    const reviewer = (users as Array<{ user_id: number }>)[0];
-
-    if (!reviewer) {
-      return NextResponse.json(
-        { success: false, error: "No users available for incidents.verified_by." },
-        { status: 500 }
-      );
-    }
-
     const [result] = await pool.execute(
       `INSERT INTO incidents
-        (segment_id, verified_by, incident_type, severity, occurred_at, reported_at, source_observation_id)
-       VALUES (?, ?, ?, ?, ?, NOW(), NULL)`,
-      [segmentId, reviewer.user_id, type, severity, occurredAt.replace("T", " ").slice(0, 19)]
+        (segment_id, reported_by, verified_by, incident_type, severity, description, occurred_at, reported_at, source_observation_id)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, NOW(), NULL)`,
+      [segmentId, auth.user.id, type, severity, description, occurredAt.replace("T", " ").slice(0, 19)]
     );
 
     const insertResult = result as { insertId: number };
@@ -84,8 +78,10 @@ export async function POST(request: Request) {
         s.road_name AS road,
         i.incident_type AS type,
         i.severity AS severity,
+        i.description AS description,
         i.occurred_at AS occurredAt,
         i.reported_at AS reportedAt,
+        i.reported_by AS reportedBy,
         i.verified_by AS verifiedBy
        FROM incidents i
        INNER JOIN road_segments s ON s.segment_id = i.segment_id

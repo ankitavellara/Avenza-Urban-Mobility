@@ -13,7 +13,7 @@ Neo4j credentials.
 | `Locality` | `name` | MySQL `localities` |
 | `RoadSegment` | `id`, `name`, `lengthM`, lighting/condition/accessibility ratings, incident count | MySQL `road_segments`, `segment_infrastructure`, `incidents` |
 | `TransportStop` | `id`, `name`, `type`, `latitude`, `longitude` | MySQL `transport_stops` |
-| `Incident` | `id`, `type`, `severity`, `occurredAt` | MySQL `incidents` |
+| `Incident` | `id`, `type`, `severity`, `description`, `occurredAt` | MySQL `incidents` |
 
 Relationships:
 
@@ -26,8 +26,10 @@ Relationships:
 - `(RoadSegment)-[:CONNECTS_TO {routeId, fromSequence, toSequence}]->(RoadSegment)`
   links consecutive segments in each predefined route and preserves the
   directed sequence for graph analysis.
-- `(RoadSegment)-[:NEAR_STOP {distanceM}]->(TransportStop)` comes from
-  `segment_transport` and records the distance to transit.
+- `(RoadSegment)-[:NEAR_STOP {distanceM}]->(TransportStop)` is calculated from
+  the road segment endpoint coordinates and transport stop coordinates. The
+  generated `segment_transport` seed pairings are not trusted for proximity.
+  Sync links at most the three closest stops within 800 m of each road segment.
 - `(RoadSegment)-[:HAS_INCIDENT]->(Incident)` carries the individual incident
   reports so each candidate path can show the reports on its segments.
 

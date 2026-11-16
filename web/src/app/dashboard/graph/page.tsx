@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { GitBranch } from "lucide-react";
+import Link from "next/link";
+import { GitBranch, MapPin } from "lucide-react";
 
 type NearbyStop = {
   id: number;
@@ -16,6 +17,7 @@ type PathIncident = {
   id: number;
   type: string;
   severity: string;
+  description: string;
   occurredAt: string;
 };
 type PathSegment = {
@@ -38,7 +40,7 @@ type PathResult = {
 };
 
 export default function GraphPage() {
-  const [stats, setStats] = useState<GraphStats>({ routes: 0, roadSegments: 0, transportStops: 0 });
+  const [stats, setStats] = useState<GraphStats | null>(null);
   const [localities, setLocalities] = useState<string[]>([]);
   const [startLocality, setStartLocality] = useState("");
   const [finishLocality, setFinishLocality] = useState("");
@@ -47,8 +49,23 @@ export default function GraphPage() {
   const [searchingPaths, setSearchingPaths] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [localitiesError, setLocalitiesError] = useState("");
+  const [loadingLocalities, setLoadingLocalities] = useState(true);
 
   useEffect(() => {
+    fetch("/api/localities")
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || "Could not load localities from MySQL.");
+        }
+        setLocalities((data.localities ?? []).map((locality: { name: string }) => locality.name));
+      })
+      .catch((reason: unknown) => {
+        setLocalitiesError(reason instanceof Error ? reason.message : "Could not load localities from MySQL.");
+      })
+      .finally(() => setLoadingLocalities(false));
+
     fetch("/api/graph")
       .then(async (response) => {
         const data = await response.json();
@@ -56,7 +73,6 @@ export default function GraphPage() {
           throw new Error(data.error || "Could not connect to Neo4j.");
         }
         setStats(data.stats ?? { routes: 0, roadSegments: 0, transportStops: 0 });
-        setLocalities(data.localities ?? []);
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : "Could not connect to Neo4j.");
@@ -122,13 +138,12 @@ export default function GraphPage() {
       </div>
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <Metric label="Routes in graph" value={stats.routes} />
-        <Metric label="Connected road segments" value={stats.roadSegments} />
-        <Metric label="Connected transit stops" value={stats.transportStops} />
+        <Metric label="Routes in graph" value={stats?.routes} />
+        <Metric label="Connected road segments" value={stats?.roadSegments} />
+        <Metric label="Connected transit stops" value={stats?.transportStops} />
       </section>
 
-      {!loading && !error && (
-        <section className="rounded-2xl border border-[#E1E7F0] bg-white p-5 shadow-sm sm:p-6">
+      <section className="rounded-2xl border border-[#E1E7F0] bg-white p-5 shadow-sm sm:p-6">
           <div>
             <h2 className="text-lg font-bold text-[#172033]">
               Find available paths
@@ -152,9 +167,9 @@ export default function GraphPage() {
                 }}
                 className="mt-1.5 min-h-11 w-full rounded-xl border border-[#D6DFEC] bg-white px-3 text-sm text-[#172033]"
                 required
-                disabled={localities.length === 0}
+                disabled={loadingLocalities || localities.length === 0}
               >
-                <option value="" disabled>Select a starting locality</option>
+                <option value="" disabled>{loadingLocalities ? "Loading localities..." : "Select a starting locality"}</option>
                 {localities.map((locality) => (
                   <option key={locality} value={locality}>
                     {locality}
@@ -173,9 +188,9 @@ export default function GraphPage() {
                 }}
                 className="mt-1.5 min-h-11 w-full rounded-xl border border-[#D6DFEC] bg-white px-3 text-sm text-[#172033]"
                 required
-                disabled={localities.length === 0}
+                disabled={loadingLocalities || localities.length === 0}
               >
-                <option value="" disabled>Select a destination locality</option>
+                <option value="" disabled>{loadingLocalities ? "Loading localities..." : "Select a destination locality"}</option>
                 {localities.map((locality) => (
                   <option key={locality} value={locality}>
                     {locality}
@@ -185,12 +200,21 @@ export default function GraphPage() {
             </label>
             <button
               type="submit"
-              disabled={searchingPaths || localities.length < 2}
+              disabled={searchingPaths || loadingLocalities || localities.length < 2}
               className="self-end rounded-xl bg-[#172033] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#293750] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {searchingPaths ? "Searching paths..." : "Search paths"}
             </button>
           </form>
+
+          {localitiesError && (
+            <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{localitiesError}</p>
+          )}
+          {!loading && error && (
+            <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Neo4j is unavailable, so path search cannot run yet. Start the local Neo4j instance, then refresh this page. MySQL still supplies the locality choices above.
+            </p>
+          )}
 
           {pathError && (
             <p className="mt-4 rounded-lg bg-[#F5F7FB] px-3 py-2 text-sm text-[#526078]">
@@ -216,6 +240,12 @@ export default function GraphPage() {
                   <p className="mt-1 text-xs text-[#8794A7]">
                     {path.origin} → {path.destination}
                   </p>
+                  <Link
+                    href={`/dashboard/map?segments=${path.segments.map((segment) => segment.id).join(",")}&route=${encodeURIComponent(path.routeName)}&from=${encodeURIComponent(path.origin)}&to=${encodeURIComponent(path.destination)}`}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#C9D9EE] bg-white px-3 py-2 text-sm font-semibold text-[#365F98] transition hover:bg-[#F0F5FD]"
+                  >
+                    <MapPin size={16} /> View on map
+                  </Link>
                   <ol className="mt-3 space-y-3">
                     {path.segments.map((segment, segmentIndex) => (
                       <li
@@ -237,6 +267,9 @@ export default function GraphPage() {
                             </ul>
                           </div>
                         )}
+                        {segment.nearbyStops.length === 0 && (
+                          <p className="mt-2 text-xs text-[#8794A7]">No transport stop is within 800 m of this segment.</p>
+                        )}
                         {segment.incidents.length > 0 ? (
                           <ul className="mt-2 space-y-1.5">
                             {segment.incidents.map((incident) => (
@@ -247,17 +280,7 @@ export default function GraphPage() {
                                     <span className="ml-2 text-[#64748B]">Incident details</span>
                                   </summary>
                                   <p className="mt-2 text-xs leading-5 text-[#526178]">
-                                    {incident.type === "ACCIDENT"
-                                      ? "An accident report was recorded."
-                                      : incident.type === "THEFT"
-                                        ? "A theft report was recorded."
-                                        : incident.type === "HARASSMENT"
-                                          ? "A harassment report was recorded."
-                                          : "An incident was recorded under the other category."}
-                                    {` It is linked to ${segment.name} (segment #${segment.id}) with ${incident.severity.toLowerCase()} severity.`}
-                                  </p>
-                                  <p className="mt-1 text-xs leading-5 text-[#8794A7]">
-                                    This database record has no additional narrative description.
+                                    {incident.description || `No description is available for this legacy ${incident.type.toLowerCase()} report.`}
                                   </p>
                                 </details>
                               </li>
@@ -275,13 +298,10 @@ export default function GraphPage() {
               ))}
             </ol>
           )}
-        </section>
-      )}
+      </section>
 
       {loading ? (
-        <p className="rounded-2xl border border-[#E1E7F0] bg-white p-8 text-center text-[#64748B]">
-          Syncing and loading the Neo4j route graph...
-        </p>
+        <p className="rounded-2xl border border-[#E1E7F0] bg-white p-5 text-sm text-[#64748B]">Connecting to Neo4j and syncing the graph…</p>
       ) : error ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
           <p className="font-semibold">Neo4j is not available yet.</p>
@@ -296,11 +316,11 @@ export default function GraphPage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value }: { label: string; value: number | undefined }) {
   return (
     <div className="rounded-2xl border border-[#E1E7F0] bg-white p-5">
       <p className="text-sm text-[#64748B]">{label}</p>
-      <p className="mt-2 text-3xl font-bold text-[#172033]">{value}</p>
+      <p className="mt-2 text-3xl font-bold text-[#172033]">{value ?? "—"}</p>
     </div>
   );
 }
